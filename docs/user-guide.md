@@ -2,12 +2,13 @@
 
 Pages are the function keys under the screen: PLAY, LOAD, GEN, SETUP, MORE, SOUND, COLOR, LINN,
 STATS. **Press PLAY's key a second time for LIGHT**, the same page on light paper; both versions
-control the same settings. The 16 Q-Links follow the on-screen controls row by row (top row =
-Q-Links 13-16); on PLAY the lower two knob rows have no on-screen controls: Q-Links 5-8 are Loop
-Bars, Timing, Pitch Tol, Chords; 1-4 are Error Vol, Metronome, Count-in, Mask. Double-tap a
-control (or press the data wheel) for the MPC's large editor or list. The MPC's preset menu offers
-five practice presets (Wait exact, Wait relaxed, Flow medium, Rhythm strict, Rhythm slow); they
-change only practice settings.
+control the same settings. Press LINN's key again for **LAYOUT**, the LinnStrument's layout. The
+16 Q-Links follow the on-screen controls row by row (top row = Q-Links 13-16). On PLAY, Q-Links
+5-8 work the header's fields, **Bar, Note, BPM** and Loop Bars (the MPC draws its frame round
+them), and 1-4 are Timing, Pitch Tol, Chords and Error Vol. Tap a control to give it the data
+wheel; double-tap it (or push the wheel) for the MPC's large editor or list. The MPC's preset menu
+offers five practice presets (Wait exact, Wait relaxed, Flow medium, Rhythm strict, Rhythm slow);
+they change only practice settings.
 
 Every switch has its options written on its buttons, the chosen one filled in. Under each control
 a readout says what the current choice does, and changes as you change it; values show their
@@ -17,14 +18,29 @@ units (160 ms, 30%, +2 st, Ch 1).
 
 ![LIGHT: PLAY on light paper](img/play-day.png)
 
+![The piece list: tap the title](img/piece-list.png)
+
 ## PLAY
 
 - **Header:** title and last message; status (WAIT / FLOW / RHYTHM / LOOP / COUNT-IN / PAUSED /
-  DONE / LOADING / NO FILE) and which hands; current bar / bars; accuracy (correct notes divided
-  by correct + missed + wrong); misses and wrong notes; tempo in BPM after your Tempo %; the next
-  note for each hand (**Next R**: the top of the right hand's chord, **Next L**: the bottom of the
-  left hand's); the last note you played; with LinnStrument fingering on, the suggested finger
-  for each hand. A thin bar under the header shows how far through the piece you are.
+  DONE / LOADING / NO FILE / LISTEN) and which hands; current bar / bars; the note you are on
+  (counted from the start); accuracy (correct notes divided by correct + missed + wrong); misses
+  and wrong notes; tempo in BPM; the next note for each hand (**Next R**: the top of the right
+  hand's chord, **Next L**: the bottom of the left hand's); the last note you played; with
+  LinnStrument fingering on, the suggested finger for each hand. A thin bar under the header
+  shows how far through the piece you are.
+- **Moving around (header fields):** tap **BAR**, **NOTE** or **BPM** in the header and turn the
+  data wheel (it lights up while it has the wheel), or turn Q-Links 5-7. Bar jumps a bar at a
+  time and Note a note at a time, and the cursor goes there (what you played before stays
+  marked); BPM sets the tempo directly (Tempo % follows; turn Tempo and BPM follows: whichever you
+  set last is kept when the next piece loads). Double-tap a field, or push the wheel, for the
+  large editor. The fields follow the cursor as you play.
+- **Pieces in order (the title):** the title is a drop-down. Tap it for the **piece list**: the
+  folder (or the Playlist) the piece was loaded from, with the one playing outlined. Turn the data
+  wheel to choose (the list opens by itself if it was closed), push it or tap a row to load; tap
+  the title again to close the list. The title shows where you are, e.g. *(3/12)*. With **Auto
+  Next** on (MORE), two seconds after a piece ends the next one loads by itself, so a folder of
+  short drills plays as one session.
 - **Staff:** the current note has a coloured band. Notes you play turn green (they stay bright
   for a moment, then fade with the rest of what you have played); notes you miss in Rhythm or
   Flow turn red; a wrong note appears as a red note where you played it, with its accidental and
@@ -32,13 +48,20 @@ units (160 ms, 30%, +2 st, Ch 1).
   With Note Colors on, every note still to be played has a dot of its colour (COLOR page). The
   whole staff can flash red on a mistake (Red Flash) and flashes green when a loop pass meets your
   goal. Small numbers above the staff are bar numbers. **Tap the staff** to start or pause.
+- **8va and 8vb:** a note too high or too low for the space above or below the staves (more than
+  about four ledger lines out) is written an octave (or two) nearer, under an *8va* or *15ma*
+  line (sounds higher than written) or over an *8vb* / *15mb* line (sounds lower), for the whole
+  bar where that is enough, so the notes keep their shape. Play them where they sound.
 - **Messages:** when two wrong notes in a row look like the same slip, the message line says so:
   "Waiting for the left hand (G3)" when a piece for both hands still wants a left-hand note (set
   Hands to Right to practise the right hand alone), or "You play C5, the music says C4" when your
   instrument sounds an octave away from the music (Pitch Tol = Octave accepts any octave, or
   transpose the instrument).
 - **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; Play, Listen, Restart,
-  Loop and Loop From.
+  Loop, **Loop From** and **Loop To**. The loop's three numbers keep each other right: moving
+  Loop From moves Loop To with it (same length), moving Loop To past Loop From pulls Loop From
+  along, Loop Bars (Q-Link 8 or MORE) stretches it from Loop From, and the loop never runs past the
+  end of the piece.
 
 ### Listen
 
@@ -72,8 +95,16 @@ hands you practise (the Hands setting).
 
 In Rhythm and Flow, **Start** decides how the clock starts: on your first correct note (no
 count-in needed), on the Play button (with the Count-in you chose), or with the MPC's own
-transport (press PLAY on the MPC). With **Wrong Note = Stop**, a wrong note holds the clock until
-you play the right one.
+transport (**MPC Play**). With **Wrong Note = Stop**, a wrong note holds the clock until you play
+the right one.
+
+**Start = MPC Play** also lets the MPC's transport buttons move you through the piece, in any
+mode: Play starts Rhythm and Flow, Stop pauses where you are, and while it is stopped, anything that moves the
+MPC's playhead moves the practice position to the same bar and beat: the locate and step buttons,
+event and increment back/forward, and Stop pressed twice, which takes the MPC (and you) back to
+the start. The plugin cannot see the buttons themselves, only where the MPC's playhead is, so it
+follows the playhead in 4/4 or whatever time signature the MPC's sequence has, counting bars from
+the sequence start.
 
 ### Slack
 
@@ -99,9 +130,18 @@ you play the right one.
 
 ![LOAD, Night](img/load-night.png)
 
-Folder (knob), Scroll (knob), Sort (Name, Best %, Recent, Level). Tap a row to select it, then
-**LOAD**. Each row shows your best accuracy for that piece. The details panel shows the composer,
-level, your record and where the file came from. **RESCAN** after copying new files.
+Folder (knob), Scroll (knob), Sort (Name, Best %, Recent, Level). **Turn the data wheel on the
+list** to move the selection through the whole folder (the list scrolls with it), and **push the
+wheel** to load it; or tap a row and press **LOAD** (a double-tap on a row loads it too). Each row
+shows your best accuracy for that piece. The details panel shows the composer, level, your record
+and where the file came from. **RESCAN** after copying new files. Loading a piece makes its folder
+PLAY's piece list (see PLAY), so one load is enough to go through a whole folder of drills.
+
+**Playlist:** **ADD TO LIST** puts the selected file at the end of your playlist; it appears as
+the last folder, **Playlist**, in the order you added the files (the same file can be in it more
+than once). Load from it to go through it in that order. **REMOVE** takes the selected file out of
+the playlist (in the Playlist folder, the selected row). It is kept in `SightReader/playlist.txt`
+on the drive, one file per line, so it can also be edited on a computer.
 
 Folders: `Drills: ...` are built in: *Scales* and *Arpeggios* are for the right hand, *Scales LH*
 and *Arpeggios LH* for the left, *Two Hands* has scales, arpeggios and pieces for both hands at
@@ -142,7 +182,9 @@ bar you are in so you must read ahead), **Note Names** (header shows the next no
 played), **Accomp** (sends the other hand's notes, or all notes not required, to the port
 "Sight Reader MIDI Out" so an instrument track can play them; route a track's input to that
 port), **Split**, **Transpose** (reloads the piece), **Tempo Ramp** (+2/5/10 % after each loop
-pass at or above **Goal**), **Loop Bars**. The bottom row is everything that goes out of "Sight
+pass at or above **Goal**), **Loop Bars** and **Loop To**, **Auto Next** (On by default: two
+seconds after a piece ends, the next one in its folder or the Playlist loads; not while Loop is
+on). The bottom row is everything that goes out of "Sight
 Reader MIDI Out": **Listen At**, **Listen Hands**, **Accomp**, and **Out Ch**, the MIDI channel
 they use (1 by default; for an MPE synth pick a channel it plays notes on, such as 2).
 
@@ -185,9 +227,11 @@ The plugin's own sounds, all quiet by default:
 The dot is sized so a half or whole note still looks hollow; on the hand you are not practising
 (Hands = Right or Left) there are no dots or marks.
 
-## LINN
+## LINN and LAYOUT
 
-See [linnstrument.md](linnstrument.md).
+**Linn Mode**, **Linn Port** (USB, or the MPC's MIDI Out A/B to the LinnStrument's MIDI In),
+**TEST LIGHTS**, the guide, fingering, LIGHT BARS, Key Lights and **Restore**; press LINN again
+for LAYOUT (size, row offset, lowest note, left-handed). See [linnstrument.md](linnstrument.md).
 
 ## STATS
 

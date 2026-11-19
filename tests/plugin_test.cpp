@@ -164,6 +164,22 @@ static void writeMid(const std::string& dir, const std::string& file, const std:
     if (mf) { std::fwrite(bytes.data(), 1, bytes.size(), mf); std::fclose(mf); }
 }
 
+// Every value, text and name, for tools/skin/render_page.py.
+static void writeState(Plug& p, const std::string& statePath)
+{
+    FILE* sf = std::fopen(statePath.c_str(), "w");
+    if (!sf) return;
+    auto esc = [](const std::string& t) { std::string o; for (char c : t) { if (c == '"' || c == '\\') o.push_back('\\'); if ((unsigned char)c >= 32) o.push_back(c); } return o; };
+    std::fprintf(sf, "{\"values\": [");
+    for (int i = 0; i < gen::kNumParams; ++i) std::fprintf(sf, "%s%.6f", i ? "," : "", (double)p.e->getParameter(p.e, i));
+    std::fprintf(sf, "], \"text\": {");
+    for (int i = 0; i < gen::kDisplayBase; ++i) std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(p.text(i)).c_str());
+    std::fprintf(sf, "}, \"name\": {");
+    for (int i = 0; i < gen::kTextBase; ++i) { char b[256] = {0}; p.d(effGetParamName, i, 0, b); std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(b).c_str()); }
+    std::fprintf(sf, "}}\n");
+    std::fclose(sf);
+}
+
 static int digits(Plug& p, int base, int n)
 {
     int v = 0; bool any = false;
@@ -293,17 +309,7 @@ int main(int argc, char** argv)
     std::fprintf(f, "]}\n");
     std::fclose(f);
     // full state for tools/skin/render_page.py
-    std::string statePath = std::string(argv[3]) + ".state.json";
-    FILE* sf = std::fopen(statePath.c_str(), "w");
-    auto esc = [](const std::string& t) { std::string o; for (char c : t) { if (c == '"' || c == '\\') o.push_back('\\'); if ((unsigned char)c >= 32) o.push_back(c); } return o; };
-    std::fprintf(sf, "{\"values\": [");
-    for (int i = 0; i < gen::kNumParams; ++i) std::fprintf(sf, "%s%.6f", i ? "," : "", (double)p.e->getParameter(p.e, i));
-    std::fprintf(sf, "], \"text\": {");
-    for (int i = 0; i < gen::kDisplayBase; ++i) std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(p.text(i)).c_str());
-    std::fprintf(sf, "}, \"name\": {");
-    for (int i = 0; i < gen::kTextBase; ++i) { char b[256] = {0}; p.d(effGetParamName, i, 0, b); std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(b).c_str()); }
-    std::fprintf(sf, "}}\n");
-    std::fclose(sf);
+    writeState(p, std::string(argv[3]) + ".state.json");
     // a resume from the host keeps the place in the piece (0.1 went back to the start)
     int stepBefore = digits(p, gen::kD_d_acc, 3);
     p.d(effMainsChanged, 0, 0); p.d(effMainsChanged, 0, 1); p.run(0.3);
@@ -507,6 +513,7 @@ int main(int argc, char** argv)
         CHECK(p.frame(gen::kD_qsel + 1, gen::kF_qsel) == 2);
         wheel(p, gen::P_PIECE, 1); p.waitWorker(0.3);
         CHECK(p.frame(gen::kD_qsel + 2, gen::kF_qsel) == 2 && p.frame(gen::kD_qsel + 1, gen::kF_qsel) == 1);
+        writeState(p, std::string(argv[3]) + ".queue.state.json");                 // the list open, for the docs
         p.e->setParameter(p.e, gen::P_PIECE_GO, 1.0f); p.waitWorker(1.0);
         CHECK(p.text(gen::kTextBase + gen::T_TITLE).find("(3/3)") != std::string::npos);
         CHECK(p.e->getParameter(p.e, gen::P_QPANEL) < 0.5f);                       // the list closed

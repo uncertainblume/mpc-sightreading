@@ -6,7 +6,7 @@ coordinates as the skin. Lets the notation be checked on a computer, without an 
 dump.json (written by tests/sr_test --dump):
   {"cells": [[frame per row] per slot], "barlines": [frame per slot boundary (slots+1)],
    "overlays": [frame per slot], "keysig": sf, "timesig": frame, "masks": [f0, f1],
-   "flash": f}
+   "flash": f, "marks": [[mark frame per row] per slot] (optional)}
 """
 import json, os, sys
 from PIL import Image
@@ -46,6 +46,13 @@ def compose(dump, theme, skin_dir):
             y0 = G.GRID_TOP if staff == 0 else R.MID_Y
             page.alpha_composite(strip_frame(m, len(G.STAFFMASK_FRAMES), fr), (G.SLOTS_X0, y0))
     page.alpha_composite(load("%s_staff.png" % theme), (0, 0))
+    if dump.get("marks"):
+        mk = load("%s_marks.png" % theme)
+        for s, col in enumerate(dump["marks"]):
+            x = G.SLOTS_X0 + s * G.SLOT_W
+            for r, fr in enumerate(col):
+                if fr:
+                    page.alpha_composite(strip_frame(mk, len(G.MARK_FRAMES), fr), (x, G.row_y(r) - G.CELL_H // 2))
     bl = load("%s_barline.png" % theme)
     for s, fr in enumerate(dump.get("barlines", [])):
         if fr:

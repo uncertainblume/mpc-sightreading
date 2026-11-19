@@ -5,9 +5,9 @@
 //   input (a LinnStrument, a keyboard, the pads), and checks them against a MIDI file or a
 //   generated exercise. Wait mode holds on each note until you play it; Rhythm mode runs a
 //   clock and grades timing; Flow mode runs the clock but waits a while for missed notes.
-//   It makes no sound of its own except a short square-wave blip on mistakes (and a
-//   metronome if you want one): put your instrument on another track listening to the same
-//   input.
+//   It makes no sound of its own except a short, quiet sound on mistakes (six timbres with
+//   an ADSR envelope, on the SOUND page) and a metronome if you want one: put your instrument
+//   on another track listening to the same input.
 //
 // How the screen works
 //   The MPC draws plugin pages from JSON skins; a plugin cannot paint. The staff is a grid of
@@ -18,7 +18,7 @@
 //   display strings and audioMasterUpdateDisplay, at most ten times a second.
 //
 // Threads
-//   audio thread: MIDI in, the practice engine, display parameters, blips, LinnStrument lights
+//   audio thread: MIDI in, the practice engine, display parameters, sounds, LinnStrument lights
 //   worker thread: library scan, MIDI loading and layout, exercise generation, progress files,
 //                  finding the LinnStrument, reading the MPC project's key
 //   They meet through atomics and a pointer hand-off; the audio thread never locks or allocates.
@@ -41,6 +41,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -50,7 +51,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 100;   // 0.1.0
+constexpr int kVersion = 200;   // 0.2.0
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -96,7 +97,7 @@ struct Loaded
 {
     Score score;
     Fingering fing;
-    std::vector<uint8_t> stepState, noteState;
+    std::vector<uint8_t> stepState, noteState, stepWrong;
     std::string path, progressKey, title;
     bool generated = false;
     std::vector<uint8_t> midiBytes;     // generated exercises, for "Save"
@@ -112,35 +113,118 @@ template <typename T, int N> struct Spsc
     bool pop(T& v) { int t = tail.load(std::memory_order_relaxed); if (t == head.load(std::memory_order_acquire)) return false; v = items[t]; tail.store((t + 1) % N, std::memory_order_release); return true; }
 };
 
-// Square-wave blips: errors, reminders, metronome. Two voices are plenty.
-struct Blips
+// The plugin's own sounds: the wrong-note sound (six timbres through an ADSR envelope),
+// reminders, metronome clicks and the end-of-piece chime. Quiet by default; the SOUND page has
+// the controls. No allocation; a handful of voices.
+struct Synth
 {
-    struct V { double phase = 0, inc = 0; int left = 0, total = 0; float amp = 0; };
-    V v[2];
-    void trigger(double sr, double hz, double ms, float amp)
+    struct Env { double a = 0.002, d = 0.16, s = 0.0, r = 0.06, len = 0.0; };   // seconds; s is a level
+    enum Type { Wood = 0, Tick = 1, Thud = 2, Bell = 3, Sine = 4, Square = 5 };
+    static constexpr double kBaseHz[6] = {1000.0, 2600.0, 110.0, 880.0, 660.0, 440.0};
+    static constexpr float kLevel[6] = {0.9f, 1.4f, 0.93f, 1.13f, 0.92f, 1.12f};   // about equal peaks at amp 1
+    struct Voice
     {
-        V& x = v[0].left <= v[1].left ? v[0] : v[1];
-        x.phase = 0; x.inc = hz / sr; x.total = x.left = (int)(ms * 0.001 * sr); x.amp = amp;
+        bool on = false; int type = 0; double t = 0, freq = 440, ph = 0, ph2 = 0, gate = 0; float amp = 0;
+        Env e; float held = 0, lp = 0, low = 0, band = 0; uint32_t rnd = 1; uint64_t age = 0;
+    };
+    static constexpr int kVoices = 8;
+    Voice v[kVoices];
+    uint64_t counter = 0;
+
+    void trigger(int type, double hz, float amp, Env e)
+    {
+        if (amp <= 0.0001f) return;
+        Voice* x = nullptr;
+        for (Voice& c : v) if (!c.on) { x = &c; break; }
+        if (!x) { x = &v[0]; for (Voice& c : v) if (c.age < x->age) x = &c; }
+        *x = Voice();
+        x->on = true; x->type = type < 0 || type > 5 ? 0 : type; x->freq = hz; x->amp = amp;
+        e.a = std::max(e.a, 0.0005); e.d = std::max(e.d, 0.003); e.r = std::max(e.r, 0.003);
+        x->e = e; x->gate = std::max(e.len, e.a + e.d);
+        x->age = ++counter; x->rnd = 0x9E3779B9u ^ (uint32_t)(counter * 2654435761u);
     }
-    void render(float* l, float* r, int n, float gain)
+    void allOff() { for (Voice& c : v) c.on = false; }
+
+    static float osc(Voice& x, double sr)
     {
-        for (V& x : v)
+        const double kTwoPi = 6.283185307179586;
+        const double t = x.t;
+        switch (x.type)
         {
-            if (x.left <= 0) continue;
-            for (int i = 0; i < n && x.left > 0; ++i, --x.left)
+            case Wood:
+            {   // a struck wooden bar: two inharmonic partials, the upper one short, a slight drop in pitch
+                double f = x.freq * (1.0 + 0.08 * std::exp(-t / 0.006));
+                x.ph += f / sr; if (x.ph >= 1.0) x.ph -= 1.0;
+                x.ph2 += f * 2.76 / sr; if (x.ph2 >= 1.0) x.ph2 -= 1.0;
+                return (float)(0.72 * std::sin(kTwoPi * x.ph) + 0.28 * std::exp(-t / 0.012) * std::sin(kTwoPi * x.ph2));
+            }
+            case Tick:
+            {   // noise through a resonant band-pass at the pitch
+                x.rnd ^= x.rnd << 13; x.rnd ^= x.rnd >> 17; x.rnd ^= x.rnd << 5;
+                float nz = (float)(int32_t)x.rnd * (1.0f / 2147483648.0f);
+                float f = (float)(2.0 * std::sin(3.141592653589793 * std::min(x.freq, sr / 6.0) / sr));
+                x.low += f * x.band;
+                float high = nz - x.low - 0.3f * x.band;
+                x.band += f * high;
+                return x.band * 0.55f;
+            }
+            case Thud:
+            {   // a low sine that starts higher and drops, like a soft drum
+                double f = x.freq * (1.0 + 1.2 * std::exp(-t / 0.025));
+                x.ph += f / sr; if (x.ph >= 1.0) x.ph -= 1.0;
+                return (float)std::sin(kTwoPi * x.ph);
+            }
+            case Bell:
+            {   // two-operator FM, the brightness fading
+                double idx = 2.0 * std::exp(-t / 0.3);
+                x.ph2 += x.freq * 3.5 / sr; if (x.ph2 >= 1.0) x.ph2 -= 1.0;
+                x.ph += x.freq / sr; if (x.ph >= 1.0) x.ph -= 1.0;
+                return (float)(0.8 * std::sin(kTwoPi * x.ph + idx * std::sin(kTwoPi * x.ph2)));
+            }
+            case Square:
+            {   // the 0.1 square, rounded off by a low-pass
+                x.ph += x.freq / sr; if (x.ph >= 1.0) x.ph -= 1.0;
+                float sq = x.ph < 0.5 ? 0.8f : -0.8f;
+                x.lp += (sq - x.lp) * (float)(1.0 - std::exp(-kTwoPi * 1800.0 / sr));
+                return x.lp;
+            }
+            default:
+                x.ph += x.freq / sr; if (x.ph >= 1.0) x.ph -= 1.0;
+                return (float)std::sin(kTwoPi * x.ph);
+        }
+    }
+
+    void render(float* l, float* r, int n, double sr, float gain)
+    {
+        const double dt = 1.0 / sr;
+        for (Voice& x : v)
+        {
+            if (!x.on) continue;
+            const float level = kLevel[x.type] * x.amp * gain;
+            for (int i = 0; i < n; ++i)
             {
-                int pos = x.total - x.left;
-                float env = 1.0f;
-                int att = 40, rel = x.total / 3;
-                if (pos < att) env = pos / (float)att;
-                if (x.left < rel) env = x.left / (float)rel;
-                float s = (x.phase < 0.5 ? 1.0f : -1.0f) * x.amp * env * gain;
-                x.phase += x.inc; if (x.phase >= 1.0) x.phase -= 1.0;
-                l[i] += s; r[i] += s;
+                float env;
+                if (x.t < x.gate)
+                {
+                    if (x.t < x.e.a) env = (float)(x.t / x.e.a);
+                    else env = (float)(x.e.s + (1.0 - x.e.s) * std::exp(-5.0 * (x.t - x.e.a) / x.e.d));
+                    x.held = env;
+                }
+                else
+                {
+                    double k = (x.t - x.gate) / x.e.r;
+                    if (k >= 1.0) { x.on = false; break; }
+                    env = x.held * (float)(std::exp(-4.0 * k) * (1.0 - k));   // reaches zero at the end
+                }
+                float smp = osc(x, sr) * env * level;
+                l[i] += smp; r[i] += smp;
+                x.t += dt;
             }
         }
     }
 };
+constexpr double Synth::kBaseHz[6];
+constexpr float Synth::kLevel[6];
 
 } // namespace
 
@@ -214,10 +298,13 @@ public:
 
     void prepare(double sampleRate, int) override { sr_ = sampleRate; }
 
+    // The host calls this on every resume and after a state load. It must not move the player
+    // back to the start (0.1 did: an MPC suspend/resume lost your place); a state load reloads
+    // the piece through loadExtraState() anyway.
     void reset() override
     {
-        engine_.restart();
         accompAllOff();
+        synth_.allOff();
         forceFullPush_ = true; forceCursor_ = gen::kDisplayBase;
     }
 
@@ -237,6 +324,8 @@ public:
             case gen::P_LINN_SECT: if (plain >= 0.5f) trig_section_.store(true); break;
             case gen::P_LINN_CLEAR: if (plain >= 0.5f) trig_clear_.store(true); break;
             case gen::P_LINN_SYNC: if (plain >= 0.5f) { trig_keyread_.store(true); wake(); } break;
+            case gen::P_SND_TEST: if (plain >= 0.5f) trig_sndtest_.store(true); break;
+            case gen::P_COL_RESET: if (plain >= 0.5f) trig_colreset_.store(true); break;
             case gen::P_FOLDER: case gen::P_SCROLL: case gen::P_SORT: case gen::P_ROW:
                 if (index != gen::P_ROW) nudge(index);
                 listDirty_.store(true); wake(); break;
@@ -336,7 +425,7 @@ public:
                 guideAllOff();
                 Loaded* old = current_;
                 current_ = in;
-                engine_.setScore(&current_->score, current_->stepState.data(), current_->noteState.data());
+                engine_.setScore(&current_->score, current_->stepState.data(), current_->noteState.data(), current_->stepWrong.data());
                 readSettings();
                 engine_.restart();
                 if (old) retired_.store(old, std::memory_order_release);
@@ -349,6 +438,12 @@ public:
         // 2. settings and triggers
         readSettings();
         if (trig_restart_.exchange(false)) { engine_.restart(); accompAllOff(); resetParam(gen::P_RESTART); setParamFromEngine(gen::P_PLAY, 0.0f); }
+        if (trig_sndtest_.exchange(false)) { errorSound(0, 1.0f); resetParam(gen::P_SND_TEST); }
+        if (trig_colreset_.exchange(false))
+        {
+            for (int i = 0; i < 12; ++i) setParamFromEngine(gen::P_COL_C + i, gen::kControls[gen::P_COL_C + i].def);
+            resetParam(gen::P_COL_RESET);
+        }
         bool wantPlay = get(gen::P_PLAY) >= 0.5f;
         if (settings_.startMode == 2 && ctx.transport.valid)
         {
@@ -403,7 +498,7 @@ public:
             if (needNotify_[i].load(std::memory_order_relaxed)) { needNotify_[i].store(false); notifyHostParameterChanged(i); }
         // 7. sound
         if (ctx.numOutputs >= 2)
-            blips_.render(ctx.outputs[0], ctx.outputs[1], n, (float)(get(gen::P_BLIP_VOL) / 100.0) * 0.35f);
+            synth_.render(ctx.outputs[0], ctx.outputs[1], n, sr_, (float)(get(gen::P_BLIP_VOL) / 100.0) * 0.5f);
     }
 
 private:
@@ -479,17 +574,26 @@ private:
         {
             case EvType::Wrong: case EvType::Miss:
                 if (getBool(gen::P_FLASH)) { flashFrame_ = 1; flashBlocks_ = (int)(0.22 * sr_ / 128); }
-                if (getBool(gen::P_ERR_BLIP)) blips_.trigger(sr_, ev.type == EvType::Wrong ? 880.0 : 740.0, 70, 0.9f);
-                if (ev.type == EvType::Wrong) wrongShown_ = ev.a;
+                if (getBool(gen::P_ERR_BLIP)) errorSound(ev.type == EvType::Wrong ? 0 : -3, 1.0f);
+                if (ev.type == EvType::Wrong) hintOnWrong(ev.a, ev.b);
                 break;
-            case EvType::Reminder: if (getBool(gen::P_ERR_BLIP)) blips_.trigger(sr_, 587.33, 45, 0.55f); break;
-            case EvType::Accent: blips_.trigger(sr_, 1760.0, 22, 0.8f); break;
-            case EvType::Beat: case EvType::CountIn: blips_.trigger(sr_, 1318.5, 18, 0.55f); break;
-            case EvType::Hit: wrongShown_ = -1; break;
+            case EvType::Hit: hintRun_ = 0; hintKind_ = 0; break;
+            case EvType::Reminder: if (getBool(gen::P_ERR_BLIP)) errorSound(0, (float)(get(gen::P_SND_REMIND) / 100.0)); break;
+            case EvType::Accent: click(true); break;
+            case EvType::Beat: case EvType::CountIn: click(false); break;
             case EvType::PassDone: case EvType::PieceDone:
             {
                 if (ev.type == EvType::PassDone && ev.a >= settings_.goal) { flashFrame_ = 2; flashBlocks_ = (int)(0.4 * sr_ / 128); }
-                if (ev.type == EvType::PieceDone) { setParamFromEngine(gen::P_PLAY, 0.0f); blips_.trigger(sr_, 1046.5, 120, 0.5f); }
+                if (ev.type == EvType::PieceDone)
+                {
+                    setParamFromEngine(gen::P_PLAY, 0.0f);
+                    if (getBool(gen::P_ERR_BLIP))
+                    {   // a soft major third
+                        Synth::Env e; e.a = 0.003; e.d = 0.9; e.s = 0; e.r = 0.2;
+                        float a = (float)(get(gen::P_SND_VOL) / 100.0) * 0.6f;
+                        synth_.trigger(Synth::Bell, 1046.5, a, e); synth_.trigger(Synth::Bell, 1318.5, a * 0.8f, e);
+                    }
+                }
                 if (ev.type == EvType::PassDone && (int)get(gen::P_LOOP) == 0) break;   // the PieceDone right after records it
                 recordPass(ev.type == EvType::PieceDone);
                 break;
@@ -506,6 +610,51 @@ private:
                 break;
             default: break;
         }
+    }
+
+    // Hints for the two usual ways to get stuck: the other hand's note is still wanted (a file
+    // for both hands with Hands = Both), or the instrument plays an octave away from the music.
+    // Two wrong notes in a row of the same kind post a message (written by the worker).
+    void hintOnWrong(int pitch, int step)
+    {
+        if (!current_ || step < 0) return;
+        int kind = 0, expected = -1, rhNote = -1, lhNote = -1, octaveOf = -1;
+        bool rhOpen = false, lhOpen = false;
+        engine_.forEachRequired(step, [&](const PlayNote& pn, uint8_t st) {
+            if (st == 1) return;
+            if (pn.hand == 0) { rhOpen = true; if (rhNote < 0 || pn.pitch > rhNote) rhNote = pn.pitch; }
+            else { lhOpen = true; if (lhNote < 0 || pn.pitch < lhNote) lhNote = pn.pitch; }
+            if (pn.pitch % 12 == pitch % 12 && pn.pitch != pitch && octaveOf < 0) octaveOf = pn.pitch;
+        });
+        if (lhOpen && !rhOpen && pitch >= 60) { kind = 2; expected = lhNote; }        // the right hand is going on alone
+        else if (rhOpen && !lhOpen && pitch < 60) { kind = 3; expected = rhNote; }    // the left hand is
+        else if (octaveOf >= 0) { kind = 1; expected = octaveOf; }
+        if (kind && kind == hintKind_) ++hintRun_;
+        else { hintKind_ = kind; hintRun_ = kind ? 1 : 0; }
+        if (kind && hintRun_ == 2) { hintCode_.store(kind | (expected << 8) | (pitch << 16)); wake(); }
+    }
+
+    // The wrong-note sound with the SOUND page's settings, shifted by some semitones.
+    void errorSound(int semitones, float scale)
+    {
+        Synth::Env e;
+        e.a = get(gen::P_SND_ATTACK) / 1000.0; e.d = get(gen::P_SND_DECAY) / 1000.0;
+        e.s = get(gen::P_SND_SUSTAIN) / 100.0; e.r = get(gen::P_SND_RELEASE) / 1000.0;
+        e.len = get(gen::P_SND_LENGTH) / 1000.0;
+        int type = std::max(0, std::min(5, (int)get(gen::P_SND_TYPE)));
+        double hz = Synth::kBaseHz[type] * std::pow(2.0, (get(gen::P_SND_PITCH) + semitones) / 12.0);
+        synth_.trigger(type, hz, (float)(get(gen::P_SND_VOL) / 100.0) * scale, e);
+    }
+    // Metronome and count-in: Tick (filtered noise), Wood or Beep; the downbeat a fifth higher.
+    void click(bool accent)
+    {
+        Synth::Env e; e.a = 0.0005; e.s = 0; e.r = 0.01;
+        int ct = (int)get(gen::P_CLICK_TYPE);
+        int type = ct == 0 ? Synth::Tick : (ct == 1 ? Synth::Wood : Synth::Sine);
+        double hz = ct == 0 ? 3200.0 : (ct == 1 ? 1600.0 : 1000.0);
+        e.d = ct == 0 ? 0.025 : (ct == 1 ? 0.05 : 0.04);
+        if (accent) hz *= 1.5;
+        synth_.trigger(type, hz, (float)(get(gen::P_CLICK_VOL) / 100.0) * (accent ? 1.0f : 0.7f), e);
     }
 
     void recordPass(bool finished)
@@ -756,6 +905,7 @@ private:
             }
             setFrame(gen::kD_overlay + s, ov[s], gen::kOverlayFrames);
         }
+        buildMarks(sc, ov);
         for (int i = 0; i <= gen::kSlots; ++i) setFrame(gen::kD_barline + i, bar[i], gen::kBarlineFrames);
         setFrame(gen::kD_keysig, sc ? sc->keySf + 7 : 7, gen::kKeySigFrames);
         setFrame(gen::kD_timesig, sc ? sc->timeSigFrame() : 0, gen::kTimeSigFrames);
@@ -789,17 +939,18 @@ private:
         {
             setDigits(gen::kD_mnum + h * 3, 3, mnum[h] > 0 ? mnum[h] : -1);
         }
-        // next note name, played note name, fingers
+        // next notes (each hand: the top note of the right hand's chord, the bottom of the left's),
+        // the note played, fingers
         int names = (int)get(gen::P_NAMES);
-        int nextName = 0, f0 = 0, f1 = 0;
+        int nextR = -1, nextL = -1, f0 = 0, f1 = 0;
         bool flats = sc && sc->keySf < 0;
         if (sc && names > 0)
         {
             int s = engine_.nextRequiredStep(std::max(0, engine_.currentStep()));
-            int best = -1;
             engine_.forEachRequired(s, [&](const PlayNote& pn, uint8_t st) {
                 if (st == 1) return;
-                if (best < 0 || (pn.hand == 0 && pn.pitch > best)) best = pn.pitch;
+                if (pn.hand == 0) { if (nextR < 0 || pn.pitch > nextR) nextR = pn.pitch; }
+                else if (nextL < 0 || pn.pitch < nextL) nextL = pn.pitch;
                 size_t ni = (size_t)(&pn - &sc->notes[0]);
                 if (ni < current_->fing.finger.size())
                 {
@@ -808,13 +959,16 @@ private:
                     if (pn.hand == 1 && !f1) f1 = f;
                 }
             });
-            if (best >= gen::kNoteNameLow && best <= gen::kNoteNameHigh) nextName = 1 + (best - gen::kNoteNameLow) + (flats ? (gen::kNoteNameHigh - gen::kNoteNameLow + 1) : 0);
         }
-        setFrame(gen::kD_nextname, nextName, gen::kNoteNameFrames);
-        int playedName = 0;
-        if (names == 2 && lastPlayed_ >= gen::kNoteNameLow && lastPlayed_ <= gen::kNoteNameHigh)
-            playedName = 1 + (lastPlayed_ - gen::kNoteNameLow) + (flats ? (gen::kNoteNameHigh - gen::kNoteNameLow + 1) : 0);
-        setFrame(gen::kD_playedname, playedName, gen::kNoteNameFrames);
+        auto nameFrame = [flats](int p) {
+            if (p < gen::kNoteNameLow || p > gen::kNoteNameHigh) return 0;
+            return 1 + (p - gen::kNoteNameLow) + (flats ? (gen::kNoteNameHigh - gen::kNoteNameLow + 1) : 0);
+        };
+        setFrame(gen::kD_nextname, nameFrame(nextR), gen::kNoteNameFrames);
+        setFrame(gen::kD_nextname_lh, nameFrame(nextL), gen::kNoteNameFrames);
+        setFrame(gen::kD_playedname, names == 2 ? nameFrame(lastPlayed_) : 0, gen::kNoteNameFrames);
+        // COLOR page swatches
+        for (int i = 0; i < 12; ++i) setFrame(gen::kD_swatch + i, (int)get(gen::P_COL_C + i), gen::kSwatchFrames);
         bool showFingers = getBool(gen::P_LINN) && (int)get(gen::P_LINN_FINGER) == 1;
         setFrame(gen::kD_finger + 0, showFingers ? f0 : 0, gen::kFingerFrames);
         setFrame(gen::kD_finger + 1, showFingers ? f1 : 0, gen::kFingerFrames);
@@ -837,6 +991,82 @@ private:
         setDigits(gen::kD_d_passes, 3, statPlays_.load());
         setDigits(gen::kD_d_minutes, 4, statMinutes_.load());
         setDigits(gen::kD_d_streak, 3, statStreak_.load());
+    }
+
+    // Marks over the noteheads: the note's colour dot (notes still to come), the head turning
+    // green (played) or red (missed), and a red ghost head where a wrong note was played.
+    void buildMarks(const Score* sc, const uint8_t ov[gen::kSlots])
+    {
+        uint8_t mk[gen::kRows];
+        const bool colours = getBool(gen::P_NOTE_COLORS);
+        const int feedback = (int)get(gen::P_FEEDBACK);
+        int colourOf[12];
+        for (int i = 0; i < 12; ++i) colourOf[i] = std::max(0, std::min(gen::kDotColours, (int)get(gen::P_COL_C + i)));
+        // the hand not practised is dimmed: no marks on its staff
+        const int dimStaff = settings_.hands == 1 ? 1 : (settings_.hands == 2 ? 0 : -1);
+        // the step just completed keeps its bright marks for a moment, so a note is seen turning green
+        int freshSlot = -1;
+        if (sc && engine_.lastDoneStep() >= 0 && engine_.lastDoneStep() < (int)sc->steps.size() && engine_.secondsSinceDone() < 0.6)
+            freshSlot = sc->steps[(size_t)engine_.lastDoneStep()].slot;
+        for (int s = 0; s < gen::kSlots; ++s)
+        {
+            std::memset(mk, 0, sizeof(mk));
+            int k = screenSlot_[s];
+            if (sc && k >= 0 && ov[s] != 4)
+            {
+                const Slot& sl = sc->slots[(size_t)k];
+                const bool passed = (ov[s] == 2 || ov[s] == 3) && k != freshSlot;
+                const int trail = passed ? 1 : 0;
+                for (uint32_t h = 0; h < sl.headCount; ++h)
+                {
+                    const HeadRef& hr = sc->heads[sl.headFirst + h];
+                    if (hr.staff == dimStaff || hr.note < 0) continue;
+                    uint8_t st = current_->noteState[(size_t)hr.note];
+                    int fr = 0;
+                    if (feedback >= 1 && st == 1) fr = gen::kMarkTintBase + ((trail * 2 + hr.place) * 3 + hr.head) * 2 + 0;
+                    else if (feedback == 2 && st == 2) fr = gen::kMarkTintBase + ((trail * 2 + hr.place) * 3 + hr.head) * 2 + 1;
+                    else if (colours && !passed)
+                    {
+                        int c = colourOf[sc->notes[(size_t)hr.note].pitch % 12];
+                        if (c > 0) fr = gen::kMarkDotBase + (hr.place * 3 + hr.head) * gen::kDotColours + (c - 1);
+                    }
+                    mk[hr.row] = (uint8_t)fr;
+                }
+                if (feedback == 2 && sl.step >= 0 && current_->stepWrong[(size_t)sl.step])
+                    ghost(*sc, sl, current_->stepWrong[(size_t)sl.step], trail, dimStaff, mk);
+            }
+            for (int r = 0; r < gen::kRows; ++r) setFrame(gen::kD_mark + s * gen::kRows + r, mk[r], gen::kMarkFrames);
+        }
+    }
+
+    // A red head where the wrong note sits on the staff, with its accidental and ledger lines.
+    void ghost(const Score& sc, const Slot& sl, int pitch, int trail, int dimStaff, uint8_t mk[gen::kRows])
+    {
+        const Step& st = sc.steps[(size_t)sl.step];
+        int staff;
+        if (settings_.hands == 1) staff = 0;
+        else if (settings_.hands == 2) staff = 1;
+        else if (st.hands == 1) staff = 0;
+        else if (st.hands == 2) staff = 1;
+        else staff = pitch >= 60 ? 0 : 1;
+        if (staff == dimStaff) return;
+        const Measure& m = sc.measures[sl.measure];
+        Spelling sp = spellPitch(pitch, m.keySf, m.minor, 0);
+        int pos = staffPosition(sp, staff);
+        int row = scoredetail::rowOf(staff, pos);
+        if (row < 0) return;
+        int8_t keyAcc[7]; keyAccidentals(m.keySf, keyAcc);
+        int acc = sp.acc == keyAcc[sp.letter] ? 0 : (sp.acc > 0 ? 1 : (sp.acc < 0 ? 2 : 3));
+        bool ledgerRow = gen::kRowClass[row] == gen::kLedger;
+        mk[row] = (uint8_t)(gen::kMarkGhostBase + (trail * 2 + (ledgerRow ? 1 : 0)) * 4 + acc);
+        // ledger lines between the staff and the ghost, where nothing else is drawn
+        auto ledger = [&](int lp) {
+            int r = scoredetail::rowOf(staff, lp);
+            if (r < 0 || r == row || mk[r] != 0 || sl.cells[r] != 0) return;
+            mk[r] = (uint8_t)(gen::kMarkGLedgerBase + trail);
+        };
+        if (pos >= 10) for (int lp = 10; lp < pos; lp += 2) ledger(lp);
+        if (pos <= -2) for (int lp = -2; lp > pos; lp -= 2) ledger(lp);
     }
 
     void pushDisplay()
@@ -922,6 +1152,16 @@ private:
                 { std::lock_guard<std::mutex> lk(textMx_); p = currentPath_; gen = currentIsGenerated_; }
                 if (gen) rebuildGenerated();
                 else if (!p.empty()) loadPath(p, false);
+            }
+            if (int hc = hintCode_.exchange(0))
+            {
+                int kind = hc & 255, expected = (hc >> 8) & 255, played = (hc >> 16) & 255;
+                if (kind == 1)
+                    setText(gen::T_MESSAGE, "You play " + noteName(played) + ", the music says " + noteName(expected) + ": try Pitch Tol = Octave");
+                else if (kind == 2)
+                    setText(gen::T_MESSAGE, "Waiting for the left hand (" + noteName(expected) + "). Hands = Right: RH only");
+                else if (kind == 3)
+                    setText(gen::T_MESSAGE, "Waiting for the right hand (" + noteName(expected) + "). Hands = Left: LH only");
             }
             PassRecord pr;
             bool anyPass = false;
@@ -1093,6 +1333,7 @@ private:
         if (!buildScore(smf, buildOptions(), L->score, err)) { delete L; return false; }
         planFingering(L->score, layoutFromParams(), L->fing);
         L->stepState.assign(L->score.steps.size(), 0);
+        L->stepWrong.assign(L->score.steps.size(), 0);
         L->noteState.assign(L->score.notes.size(), 0);
         L->path = path; L->generated = generated;
         if (generated) L->midiBytes = bytes;
@@ -1212,7 +1453,7 @@ private:
     std::atomic<Loaded*> incoming_{nullptr};       // worker -> audio
     std::atomic<Loaded*> retired_{nullptr};        // audio -> worker
     Spsc<PassRecord, 16> passQueue_;
-    Blips blips_;
+    Synth synth_;
     AlsaOut alsa_;
     LinnLights lights_;
     float desired_[gen::kNumParams];
@@ -1220,7 +1461,9 @@ private:
     bool forceFullPush_ = true;
     int forceCursor_ = gen::kDisplayBase;
     int flashFrame_ = 0, flashBlocks_ = 0;
-    int lastPlayed_ = -1, wrongShown_ = -1;
+    int lastPlayed_ = -1;
+    int hintRun_ = 0, hintKind_ = 0;
+    std::atomic<int> hintCode_{0};                 // audio -> worker: kind | expected << 8 | played << 16
     uint64_t blockCounter_ = 0, lastUpdateDisplayBlock_ = 0;
     bool lastPlayParam_ = false, lastTransportPlaying_ = false;
     bool lastLoop_ = false; int lastLoopFrom_ = -1, lastLoopBars_ = -1, lastHands_ = -1, lastMode_ = -1;
@@ -1235,7 +1478,8 @@ private:
     // flags
     std::atomic<bool> trig_restart_{false}, trig_load_{false}, trig_rescan_{false}, trig_gen_{false}, trig_save_{false},
                       trig_section_{false}, trig_clear_{false}, trig_keyread_{false}, trig_rebuild_{false}, trig_restore_{false},
-                      listDirty_{false}, layoutChanged_{false}, loading_{false}, needUpdateDisplay_{true};
+                      listDirty_{false}, layoutChanged_{false}, loading_{false}, needUpdateDisplay_{true},
+                      trig_sndtest_{false}, trig_colreset_{false};
     std::atomic<bool> needNotify_[gen::kNumControls] = {};
     int lastInt_[gen::kNumControls];
     float lastNorm_[gen::kNumControls];

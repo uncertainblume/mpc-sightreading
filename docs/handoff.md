@@ -1,79 +1,112 @@
 # Handoff: where Sight Reader stands
 
-Written 2026-11-19 for the next working session (any model) and for the first test on the MPC.
+Written 2026-11-19 for the next working session (any model) and for the next test on the MPC.
 Read the README, then this; [design.md](design.md) has the reasoning and sources.
 
-## Status (0.1.0)
+## Status (0.2.0)
 
-Built and tested on a computer only:
+**What the first test on the MPC (0.1.0, Live III) showed**
 
-- Akai SDK build (`tools/build.sh`): arm32 + arm64, validator **0 errors, 0 warnings**.
-- `tools/run_tests.sh`: core unit tests under AddressSanitizer/UBSan (spelling, keys, a two-hand
-  file round trip, pickup detection, wait and rhythm engine runs, tolerances, the generator in 144
-  setting combinations, LinnStrument mapping, fingering, light messages); then the built plugin
-  driven through VST2 with a library on disk (scan, LOAD, right and wrong notes, counters,
-  overlays, flash); then Akai's host simulator (all checks pass; its one warning is that the
-  plugin is silent, which is by design).
-- All 70 catalogue pieces and all 148 drills load and lay out.
-- Screenshots in `docs/img` are rendered from the generated skin with the plugin's real parameter
-  values (`tools/skin/render_page.py`), not mock-ups. They approximate the MPC's drawing.
+- Works: the skin parses and every tab appears; the staff and notes draw correctly (so the
+  film-strip frame mapping is right); the cursor band works; the MPC stays responsive with 853
+  parameters and 774 widgets on PLAY.
+- Every tab appeared twice, once per theme: the MPC shows sub-tabs as separate tab buttons.
+- "The play logic doesn't work, the scrolling doesn't seem to happen", and the wrong-note blip
+  was far too loud and harsh.
 
-**Never run on an MPC.** The way the staff is drawn (660 film-strip cells driven by the plugin)
-is beyond anything the SDK examples or SurgeXXL do, though each mechanism has been seen working
-on devices separately.
+**What was wrong, and what 0.2.0 changes**
 
-## First run on the MPC: what to check, in order
+- The scale drill used for the test was written for **both hands** (C4 and C2 together) and
+  Hands defaults to Both, so after the first right-hand note the plugin waited for the left
+  hand, and every further right-hand note counted as wrong (with a blip). Nothing on screen said
+  so. Now: Scales and Arpeggios are one hand per file (left-hand versions in their own folders,
+  hands together in Two Hands); the header shows the next note of **each** hand; after two wrong
+  notes that look like this slip, the message line says "Waiting for the left hand (C2)..."; an
+  instrument an octave off gets its own message.
+- `reset()` restarted the practice engine. The host calls it on every resume, so on the MPC a
+  suspend/resume could send the player back to the first note. It no longer does.
+- Re-striking a note of the current chord, or of the step just completed (within 0.6 s), counted
+  as wrong; it is ignored now.
+- At the end of a piece in Halves view the left half went blank; it keeps its music now.
+- Played notes turn green, missed notes red, and a wrong note shows as a red note where it was
+  played (a new layer of 660 film strips over the cells). The user's colour scheme is a dot in
+  every notehead still to be played, editable per note (COLOR page).
+- The square-wave blip is replaced by a small synth (Wood by default, five other sounds, volume,
+  pitch, ADSR + length, reminder level, metronome click type and level: SOUND page). The default
+  error sound peaks about 8 dB below 0.1's, and is a soft knock instead of a square wave.
+- Only PLAY has a Day version now (tab LIGHT); the settings pages are dark only. 10 tabs instead
+  of 14 (9 pages + LIGHT).
 
-Save your project first; plugins run without crash protection.
+**Tested on a computer** (`tools/run_tests.sh`): unit tests under ASan/UBSan (now also: every
+drawn head maps to its note, re-strikes, wrong-note memory); the built plugin through VST2
+(LOAD, both hands' next notes, colour dots, green and red marks, the ghost note with its sharp on
+a ledger line, a host resume that keeps the place, RESET COLORS, the stuck-hand and octave
+messages, all six sounds' levels and a held tone's release, and a 16-bar piece played through:
+the halves turn four times and it ends DONE at 100 %); Akai's host simulator (all checks pass;
+its one warning is about silence). Validator: 0 errors, 0 warnings.
 
-1. **Install** `plugin/build/Practice Tools - VST - Sight Reader` into `/nvme/VST2 Plugins`
-   (SDK: `mpc_remote.py <ip> --drive 1 update plugin --yes`), restart, add Sight Reader to a
-   plugin track.
-2. **Tabs appear?** If the page is empty with no function-key tabs, TUI.json failed to parse.
-   Send `journalctl` lines around "Initialising VST: Sight Reader".
-3. **PLAY shows the empty staff** (clefs, brace, lines) and the header says NO FILE.
-4. **LOAD → Drills: Scales → C major → LOAD.** Notes should appear on the staff. Check that
-   noteheads sit exactly on lines and spaces and stems join up. If every cell is consistently one
-   glyph "off" (wrong accidental, a stem where a head should be), the MPC maps values to film-strip
-   frames differently from the SDK's knobs: report it; the fix is one line (`frameValue` in
-   `SightReader.cpp`).
-5. **Play C D E ...** on the LinnStrument in Wait mode (Sight Reader's track input = LinnStrument,
-   monitor Merge). The cursor should advance, notes fade, a wrong note flashes red and blips.
-6. **Responsiveness:** does the screen keep up when the half page turns? Does the MPC UI feel
-   sluggish while it runs? `tools/mpc_threads.sh` from mpc-mpe gives per-thread CPU over SSH.
-7. **LOAD page text:** the list rows, folder name and details update when you scroll.
-8. **Night/Day:** press PLAY's function key twice.
-9. **LinnStrument:** LINN → Linn Mode On. Status should read "LinnStrument connected" within three
-   seconds. Guide (Played) lights the next note via the instrument's played colour; then try
-   Guide Clr = Blue, Fingering = Colours, LIGHT BARS, Key Lights = MPC Key.
-10. **Files:** after finishing a drill, `/nvme/SightReader/progress.tsv` should exist.
+## Next test on the MPC
+
+Save your project first; plugins run without crash protection. Update with:
+
+```bash
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.2.0-mpc.zip
+```
+
+It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps
+its settings (new settings start at their defaults).
+
+1. **Tabs:** PLAY, LOAD, GEN, SETUP, MORE, SOUND, COLOR, LINN, STATS, and LIGHT on PLAY's key.
+2. **LOAD → Drills: Scales → C major scale → LOAD.** Coloured dots in the noteheads (C cyan,
+   D blue...). Play C D E... on the LinnStrument: each note turns green and the cursor moves on.
+   A wrong note: a red note where you played it, the error sound (a soft knock).
+3. **Scrolling:** keep going past the middle of the screen: the left half is rewritten with what
+   follows (Halves view).
+4. **SOUND:** TEST, try the six sounds, Error Vol, Master Vol.
+5. **Two Hands → C major scale, hands together:** the header shows NEXT R and NEXT L; play only
+   the right hand: after two wrong notes the message says the left hand is wanted.
+6. **Responsiveness with twice the widgets on PLAY:** does switching to PLAY take noticeably
+   longer than in 0.1.0? Does the screen keep up when a half turns with dots on?
+   (`tools/mpc_threads.sh` from mpc-mpe gives per-thread CPU over SSH.)
+7. **LinnStrument** (LINN → Linn Mode On), as before. The layout defaults (200, +5 row offset,
+   lowest note F#1) already match a LinnStrument 200 with the default row offset.
 
 ## Known risks and what to do
 
 | Risk | Sign | Remedy |
 |---|---|---|
-| 853 parameters is ~4x SurgeXXL's | slow plugin load, MPC memory, sluggish parameter lists | lower `SLOTS` (20) in `tools/skin/geometry.py` and rebuild: 14 slots is ~460 cells |
-| Screen-thread cost of many picture changes | the UI lags when a half page turns | keep View = Halves or Page; lower the per-block budget in `pushDisplay()` |
+| 1,553 parameters, 1,436 widgets on PLAY, TUI.json 1.3 MB | slow plugin load or slow switch to PLAY | the skin can lay the cell and mark grids out with the format's `repeats` feature (one row of widgets repeated 20 times, `{Increment}` parameter indices; SDK ui-reference 4.6) instead of 1,320 entries: much smaller JSON, untested on the device. Or lower `SLOTS` (20) in `tools/skin/geometry.py`: 14 slots is ~460 cells |
+| Screen-thread cost of many picture changes | the UI lags when a half page turns | keep View = Halves or Page; Note Colors off halves the pictures changed per turn; lower the per-block budget in `pushDisplay()` |
 | MPC's film-strip RAM cache (`/var/volatile/tmp/filmstrips`) grows per screen load | `/var` fills over a day of reloads | delete `temp_*.img` there (files not open are safe to delete, per the community notes); ask before doing it |
-| `audioMasterUpdateDisplay` rebuilds the page | popups close while the list updates | it is only sent when text changes, at most about 10 a second |
-| Text over 63 characters | cut off | titles are trimmed to 60 |
+| `audioMasterUpdateDisplay` rebuilds the page | popups close while the list or a message updates | it is only sent when text changes, at most about 10 a second |
+| Text over 63 characters | cut off | titles and messages are kept under 60 |
 | Removable drives are `noexec` | plugin missing on a USB stick | install on the internal drive |
 | LinnStrument not found | status "not found" | check `/proc/asound/seq/clients` lists it; the plugin looks for a client name containing "LinnStrument" |
 
 ## Decisions made without asking (change them if you like)
 
-- **Identity:** manufacturer "Practice Tools", name "Sight Reader", uid `SgRd`. These become
-  permanent once a project saves the plugin; change them before first use (`plugin/plugin.json`
-  and `makeInfo()` in `SightReader.cpp`) if you want your own brand.
+- **Identity:** manufacturer "Practice Tools", name "Sight Reader", uid `SgRd` (now saved in
+  projects; changing them makes old projects lose the plugin).
+- **Tabs:** only PLAY keeps a Day version (LIGHT), because every theme copy was a separate tab
+  button. `PAGES` in `tools/gen_skin.py` lists the themes per page: adding "day" to a page brings
+  its light version back.
+- **Played-note colours:** green for right, red for missed and for wrong notes (drawn where you
+  played them, rather than turning the written note red). Colour dots disappear once a note is
+  played, so the green/red feedback and the dots never compete, and the dots lead the eye
+  forward. Note Colors defaults to **on** with the user's scheme.
+- **The in-between colours** (Azure, Violet, Orchid, Cream, Amber) are halfway round the colour
+  circle between the neighbouring keys' colours (white counts as its neighbour's hue at half
+  saturation). They exist on the screen only; the LinnStrument has no such colours.
+- **Sounds:** Wood at 30 % of a 50 % master by default. The end-of-piece chime follows the Error
+  Sound switch.
 - **"Take the settings from the sounds page"** was read as: the MPC project's key (the key the
   Sounds browser uses) and the pad-perform scale, shown on the LinnStrument by Key Lights. If you
   meant something else, say what.
-- **"Every tenth note after that"** was read as: after a mistake the blip repeats on every 10th
-  note you play, up to 3 times (both adjustable: Remind and Reminders).
+- **"Every tenth note after that"** was read as: after a mistake the sound repeats on every 10th
+  note you play, up to 3 times (Remind, Reminders; its level is Remind Vol).
 - **Scrolling:** the default view turns half a screen at a time rather than moving every note,
   because each picture change costs the MPC's screen thread (see design.md). The note-by-note
   view (Steps) is there to try.
-- **Themes** are sub-tabs (press the page key again), because a plugin cannot recolour pictures.
 - **One plugin with a Linn Mode switch**, as you suggested; linnstrument.md says how to make the
   version without it.
 - **Sources:** The Session's large folk-tune database was considered for melody reading, but its
@@ -82,13 +115,15 @@ Save your project first; plugins run without crash protection.
 
 ## Open questions for you
 
-- Your message ended with "there should also be a" — what was the rest?
-- Which LinnStrument model and settings (128 or 200, row offset, transposition, splits)?
+- Your first message ended with "there should also be a" — what was the rest?
+- Do you want light versions of the settings pages back (each adds a tab button)?
 - Is the Live III the only MPC this needs to run on? (The 32-bit build is made but would be
   slower.)
 
 ## Ideas not built yet
 
+- The LinnStrument guide lights in your note colours (nearest LinnStrument colour for the black
+  keys).
 - Note-name flash cards and interval drills that need no file (quick warm-ups).
 - Better horizontal spacing (proportional within a bar), two voices per hand, angled beams,
   slurs, dynamics.

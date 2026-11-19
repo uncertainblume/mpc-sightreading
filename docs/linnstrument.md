@@ -60,6 +60,15 @@ read (gzip JSON). It re-reads every 20 seconds while Key Lights is on, and when 
 **READ KEY**. A change of key on the MPC shows up after the MPC saves (autosave is every
 5 minutes by default; saving the project shows it at once).
 
+## Note colours on the staff
+
+The COLOR page puts a dot of each note's colour in the noteheads on the MPC screen, so the staff
+speaks the same colour language as your instrument. Its palette is the LinnStrument's own colours
+(the firmware's Red, Yellow, Green, Cyan, Blue, Magenta, White, Orange, Lime, Pink) plus five
+in-between hues for the black keys. The default scheme is C cyan, D blue, E pink, F magenta,
+G white, A yellow, B orange, each black key the hue halfway between its neighbours. It changes
+nothing on the LinnStrument itself.
+
 ## Layout settings
 
 The plugin needs your layout to know which cell plays which note (everything except the Played

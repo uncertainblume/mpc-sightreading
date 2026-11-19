@@ -209,6 +209,88 @@ FLASH_FRAMES = ["none", "wrong", "good"]
 LINNSTATE_FRAMES = ["", "LINN: NO PORT", "LINN: CONNECTED", "LINN: OFF"]
 
 # ---------------------------------------------------------------------------------------------
+# Note colours and marks (0.2.0)
+# ---------------------------------------------------------------------------------------------
+# The palette: the LinnStrument's own colours (firmware colour numbers 1-11 without "off"), as a
+# screen shows them, plus five in-between hues for the black keys of the default scheme
+# C cyan, D blue, E pink, F magenta, G white, A yellow, B orange. An in-between colour is the
+# hue halfway round the colour circle between its neighbours (for white: the neighbour's hue at
+# half saturation).
+def _between(a, b):
+    import colorsys
+    ha, sa, va = colorsys.rgb_to_hsv(*[c / 255.0 for c in a])
+    hb, sb, vb = colorsys.rgb_to_hsv(*[c / 255.0 for c in b])
+    if sa < 0.05: ha = hb
+    if sb < 0.05: hb = ha
+    d = hb - ha
+    if d > 0.5: d -= 1.0
+    if d < -0.5: d += 1.0
+    h = (ha + d / 2.0) % 1.0
+    r, g, b2 = colorsys.hsv_to_rgb(h, (sa + sb) / 2.0, (va + vb) / 2.0)
+    return (int(round(r * 255)), int(round(g * 255)), int(round(b2 * 255)))
+
+_LS = {
+    "Red": (240, 36, 36), "Yellow": (255, 226, 0), "Green": (30, 206, 64), "Cyan": (0, 218, 236),
+    "Blue": (28, 72, 255), "Magenta": (226, 30, 226), "White": (255, 255, 255), "Orange": (255, 136, 0),
+    "Lime": (172, 240, 20), "Pink": (255, 112, 186),
+}
+PALETTE = [("Off", None)] + [(n, _LS[n]) for n in ("Red", "Yellow", "Green", "Cyan", "Blue", "Magenta", "White", "Orange", "Lime", "Pink")] + [
+    ("Azure", _between(_LS["Cyan"], _LS["Blue"])),         # C#: cyan - blue
+    ("Violet", _between(_LS["Blue"], _LS["Pink"])),        # D#: blue - pink
+    ("Orchid", _between(_LS["Magenta"], _LS["White"])),    # F#: magenta - white
+    ("Cream", _between(_LS["White"], _LS["Yellow"])),      # G#: white - yellow
+    ("Amber", _between(_LS["Yellow"], _LS["Orange"])),     # A#: yellow - orange
+]
+PALETTE_NAMES = [n for n, _ in PALETTE]
+def _pal(n):
+    return PALETTE_NAMES.index(n)
+# (param id suffix, name shown, default palette index) for C .. B
+NOTE_COLOUR_DEFAULTS = [
+    ("c", "C", _pal("Cyan")), ("cs", "C#", _pal("Azure")), ("d", "D", _pal("Blue")), ("ds", "D#", _pal("Violet")),
+    ("e", "E", _pal("Pink")), ("f", "F", _pal("Magenta")), ("fs", "F#", _pal("Orchid")), ("g", "G", _pal("White")),
+    ("gs", "G#", _pal("Cream")), ("a", "A", _pal("Yellow")), ("as", "A#", _pal("Amber")), ("b", "B", _pal("Orange")),
+]
+SWATCH_FRAMES = len(PALETTE)
+
+SOUND_TYPES = ["Wood", "Soft Tick", "Low Thud", "Bell", "Sine", "Square"]
+CLICK_TYPES = ["Tick", "Wood", "Beep"]
+
+# Mark frames (one film strip for every row; same 54 x 60 rectangle as the cell under it).
+#   dot:    the note's colour inside its head, sized so half and whole notes still look hollow;
+#           only on notes not yet passed (passed notes fade with their column)
+#   tint:   the head redrawn green (played right) or red (missed); "trail" variant, lighter, for
+#           columns already passed (marks sit above the played-note fade)
+#   ghost:  a red head where a wrong note was played, with its accidental, on a ledger line or not
+#   gledger: a red ledger line alone (between the staff and a ghost)
+MARK_EMPTY, MARK_DOT, MARK_TINT, MARK_GHOST, MARK_GLEDGER = range(5)
+NUM_DOT_COLOURS = len(PALETTE) - 1
+def _mark_frames():
+    f = [(MARK_EMPTY, 0, 0, 0, 0)]
+    for place in (0, 1):
+        for head in (0, 1, 2):
+            for c in range(1, len(PALETTE)):
+                f.append((MARK_DOT, 0, place, head, c))
+    for trail in (0, 1):
+        for place in (0, 1):
+            for head in (0, 1, 2):
+                for tint in (1, 2):
+                    f.append((MARK_TINT, trail, place, head, tint))
+    for trail in (0, 1):
+        for ledger in (0, 1):
+            for acc in range(4):
+                f.append((MARK_GHOST, trail, 0, ledger, acc))
+    for trail in (0, 1):
+        f.append((MARK_GLEDGER, trail, 0, 0, 0))
+    return f
+MARK_FRAMES = _mark_frames()
+MARK_DOT_BASE = 1
+MARK_TINT_BASE = MARK_DOT_BASE + 2 * 3 * NUM_DOT_COLOURS
+MARK_GHOST_BASE = MARK_TINT_BASE + 2 * 2 * 3 * 2
+MARK_GLEDGER_BASE = MARK_GHOST_BASE + 2 * 2 * 4
+assert MARK_FRAMES[MARK_TINT_BASE][0] == MARK_TINT and MARK_FRAMES[MARK_GHOST_BASE][0] == MARK_GHOST
+assert MARK_FRAMES[MARK_GLEDGER_BASE][0] == MARK_GLEDGER and len(MARK_FRAMES) == MARK_GLEDGER_BASE + 2
+
+# ---------------------------------------------------------------------------------------------
 # C++ header
 # ---------------------------------------------------------------------------------------------
 def write_cpp_header(path):
@@ -247,6 +329,14 @@ def write_cpp_header(path):
       (len(KEYSIG_FRAMES), len(TIMESIG_FRAMES), len(DIGIT_FRAMES), len(FINGER_FRAMES), BAR_FRAMES))
     w("constexpr int kNoteNameFrames = %d, kNoteNameLow = %d, kNoteNameHigh = %d;" % (len(notename_frames()), NOTENAME_LOW, NOTENAME_HIGH))
     w('constexpr const char* kTimeSigNames[%d] = {%s};' % (len(TIMESIG_FRAMES), ", ".join('"%s"' % t for t in TIMESIG_FRAMES)))
+    w("// Marks: dot = kMarkDotBase + (place*3 + head)*kDotColours + colour-1 (head 0 black, 1 half, 2 whole);")
+    w("// tint = kMarkTintBase + ((trail*2 + place)*3 + head)*2 + tint-1 (1 green, 2 red);")
+    w("// ghost = kMarkGhostBase + (trail*2 + ledger)*4 + acc (0 none, 1 sharp, 2 flat, 3 natural);")
+    w("// ghost ledger line = kMarkGLedgerBase + trail.")
+    w("constexpr int kMarkFrames = %d, kDotColours = %d;" % (len(MARK_FRAMES), NUM_DOT_COLOURS))
+    w("constexpr int kMarkDotBase = %d, kMarkTintBase = %d, kMarkGhostBase = %d, kMarkGLedgerBase = %d;" %
+      (MARK_DOT_BASE, MARK_TINT_BASE, MARK_GHOST_BASE, MARK_GLEDGER_BASE))
+    w("constexpr int kSwatchFrames = %d;" % SWATCH_FRAMES)
     w("}} // namespace sr::gen")
     with open(path, "w") as f:
         f.write("\n".join(L) + "\n")

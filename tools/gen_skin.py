@@ -6,17 +6,18 @@
 Outputs
   plugin/src/sr/gen/layout_gen.h   staff geometry and cell frame tables (tools/skin/geometry.py)
   plugin/src/sr/gen/params_gen.h   the parameter table (tools/skin/params.py)
-  plugin/skins/TUI.json            touch screen: 7 pages, each a Night and a Day sub-tab
+  plugin/skins/TUI.json            touch screen: 9 pages; PLAY also in a Day version (LIGHT)
   plugin/skins/Q-Links.json        what the 16 knobs do on each page
   plugin/skins/*.png               every film strip and picture
 
 Format: docs/ui-reference.md of Akai's MPC plugin SDK. Key order matters to the MPC's parser,
 and the overlay widgets need two consecutive "version" keys, so this writes JSON by hand.
 
-Pages (function keys; press a page's key again for the other theme):
-  PLAY   the grand staff, counters, transport
+Pages (function keys):
+  PLAY   the grand staff, counters, transport (Night); press its key again for LIGHT (Day)
   LOAD   library browser          GEN    exercise generator
   SETUP  practice settings        MORE   range, names, accompaniment, ramp
+  SOUND  the error sound, metronome    COLOR  note colour dots, played-note marks
   LINN   LinnStrument lights      STATS  progress for the current piece
 """
 import os, sys
@@ -286,6 +287,12 @@ def play_page(th):
         f, n, y0, h, w = img["mask%d" % staff]
         kids.append(strip("mask", f, n, "Parameter %d" % (IDX["_mask"] + staff), G.SLOTS_X0, y0, w, h))
     kids.append(picture("staff", img["staff"][0], 0, 0, G.TAB_W, G.GRID_BOTTOM))
+    # marks: colour dots, green/red heads, wrong-note ghosts (above the staff lines and the fade)
+    mf, mn = img["marks"][:2]
+    for s in range(G.SLOTS):
+        x = G.SLOTS_X0 + s * G.SLOT_W
+        for r in range(G.NUM_ROWS):
+            kids.append(strip("m", mf, mn, "Parameter %d" % (IDX["_mark"] + s * G.NUM_ROWS + r), x, G.row_y(r) - G.CELL_H // 2, G.SLOT_W, G.CELL_H))
     for i in range(G.SLOTS + 1):
         f, n = img["barline"][:2]
         kids.append(strip("bar", f, n, "Parameter %d" % (IDX["_barline"] + i), G.SLOTS_X0 + i * G.SLOT_W - R.BAR_W // 2, R.BAR_Y0, R.BAR_W, R.BAR_H))
@@ -306,27 +313,29 @@ def play_page(th):
     kids.append(entry("tap", "%s_tap" % th.name, o(("version", 1), ("handleName", "Data")), bounds(G.SLOTS_X0, G.GRID_TOP, G.SLOTS * G.SLOT_W, G.GRID_BOTTOM - G.GRID_TOP),
                       [("Data", P("play"))]))
     # header
-    kids.append(label("title", "Value", P("text_title"), 16, 2, 560, 34, 25, th.text, "left verticallyCentred", "SemiBold"))
-    kids.append(label("msg", "Value", P("text_message"), 16, 34, 560, 24, 16, th.dim))
+    kids.append(label("title", "Value", P("text_title"), 16, 2, 490, 34, 25, th.text, "left verticallyCentred", "SemiBold"))
+    kids.append(label("msg", "Value", P("text_message"), 16, 34, 490, 24, 16, th.dim))
     st = img["status"]
-    kids.append(strip("status", st[0], st[1], P("_status"), 584, 2, R.STATUS_W, R.STATUS_H))
+    kids.append(strip("status", st[0], st[1], P("_status"), 514, 2, R.STATUS_W, R.STATUS_H))
     hd = img["hand"]
-    kids.append(strip("hand", hd[0], hd[1], P("_handicon"), 624, 37, R.HAND_W, R.HAND_H))
+    kids.append(strip("hand", hd[0], hd[1], P("_handicon"), 554, 37, R.HAND_W, R.HAND_H))
     dg = img["digits"]
     def digits(group, n, x, y, cap):
         kids.append(label(group + "_cap", "Text", "Invalid", x, y - 18, 80, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", cap))
         for i in range(n):
             kids.append(strip(group, dg[0], dg[1], "Parameter %d" % (IDX["_" + group] + i), x + i * R.DIGIT_W, y, R.DIGIT_W, R.DIGIT_H))
-    digits("d_bar", 3, 748, 24, "Bar")
-    kids.append(label("slash", "Text", "Invalid", 748 + 3 * R.DIGIT_W, 24, 14, 30, 22, th.dim, "horizontallyCentred verticallyCentred", "Regular", text="/"))
+    digits("d_bar", 3, 678, 24, "Bar")
+    kids.append(label("slash", "Text", "Invalid", 678 + 3 * R.DIGIT_W, 24, 14, 30, 22, th.dim, "horizontallyCentred verticallyCentred", "Regular", text="/"))
     for i in range(3):
-        kids.append(strip("d_bars", dg[0], dg[1], "Parameter %d" % (IDX["_d_bars"] + i), 748 + 3 * R.DIGIT_W + 14 + i * R.DIGIT_W, 24, R.DIGIT_W, R.DIGIT_H))
-    digits("d_acc", 3, 872, 24, "Acc %")
-    digits("d_err", 3, 940, 24, "Miss")
-    digits("d_bpm", 3, 1008, 24, "BPM")
+        kids.append(strip("d_bars", dg[0], dg[1], "Parameter %d" % (IDX["_d_bars"] + i), 678 + 3 * R.DIGIT_W + 14 + i * R.DIGIT_W, 24, R.DIGIT_W, R.DIGIT_H))
+    digits("d_acc", 3, 802, 24, "Acc %")
+    digits("d_err", 3, 870, 24, "Miss")
+    digits("d_bpm", 3, 938, 24, "BPM")
     nn = img["notename"]
-    kids.append(label("next_cap", "Text", "Invalid", 1072, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next"))
-    kids.append(strip("next", nn[0], nn[1], P("_nextname"), 1072, 24, R.NOTE_W, R.NOTE_H))
+    kids.append(label("next_cap", "Text", "Invalid", 1000, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next R"))
+    kids.append(strip("next", nn[0], nn[1], P("_nextname"), 1000, 24, R.NOTE_W, R.NOTE_H))
+    kids.append(label("nextl_cap", "Text", "Invalid", 1072, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next L"))
+    kids.append(strip("nextl", nn[0], nn[1], P("_nextname_lh"), 1072, 24, R.NOTE_W, R.NOTE_H))
     pn = img["notename_played"]
     kids.append(label("played_cap", "Text", "Invalid", 1146, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Played"))
     kids.append(strip("played", pn[0], pn[1], P("_playedname"), 1146, 24, R.NOTE_W, R.NOTE_H))
@@ -345,7 +354,7 @@ def play_page(th):
     # the lower two knob rows have no on-screen controls on this page
     for q, pid in zip([5, 6, 7, 8], ["loop_bars", "timing", "pitch_tol", "chord_tol"]):
         qmap[q] = IDX[pid]
-    for q, pid in zip([1, 2, 3, 4], ["blip_vol", "metro", "count_in", "mask"]):
+    for q, pid in zip([1, 2, 3, 4], ["snd_vol", "metro", "count_in", "mask"]):
         qmap[q] = IDX[pid]
     return kids, defs, qmap, grid_page.last_rects
 
@@ -408,13 +417,45 @@ def more_page(th):
     layout = [
         [("range_lo", "knob"), ("range_hi", "knob"), ("out_range", "switch"), ("mask", "switch")],
         [("names", "switch"), ("accomp", "switch"), ("split", "knob"), ("transpose", "knob")],
-        [("ramp", "menu"), ("goal", "knob"), ("blip_vol", "knob"), ("loop_bars", "knob")],
+        [("ramp", "menu"), ("goal", "knob"), ("loop_bars", "knob"), None],
     ]
     kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
     kids.extend(paragraph("help", "Range: notes outside it are not asked for (Skip) or removed from the score (Hide). Mask hides "
                           "notes once played, or the bar you are in, so you have to read ahead. Accomp sends the other hand's notes to "
                           "\"Sight Reader MIDI Out\" for an instrument track. Tempo Ramp raises the tempo after a loop pass at or above "
                           "Goal. Split (for one-track files) and Transpose reload the piece.", 16, 470, 1248, 16, th.dim))
+    return kids, defs, qmap, grid_page.last_rects
+
+def sound_page(th):
+    layout = [
+        [("snd_type", "menu"), ("snd_vol", "knob"), ("snd_pitch", "knob"), ("snd_test", "button")],
+        [("snd_attack", "knob"), ("snd_decay", "knob"), ("snd_sustain", "knob"), ("snd_release", "knob")],
+        [("snd_length", "knob"), ("snd_remind", "knob"), ("err_blip", "switch"), ("blip_vol", "knob")],
+        [("click_type", "switch"), ("click_vol", "knob"), ("metro", "switch"), ("count_in", "switch")],
+    ]
+    kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
+    kids.extend(paragraph("help", "TEST plays the sound. It sounds on a wrong or missed note, and softer (Remind Vol) on the reminders "
+                          "after a mistake. Length above zero holds it at Sustain. Master Vol sets every sound of this plugin, "
+                          "the metronome included.", 16, 572, 1248, 15, th.dim, 20))
+    return kids, defs, qmap, grid_page.last_rects
+
+def color_page(th):
+    cols = [("col_%s" % pid, "menu") for (pid, _, _) in G.NOTE_COLOUR_DEFAULTS]
+    layout = [
+        [("note_colors", "switch"), ("feedback", "switch"), ("flash", "switch"), ("col_reset", "button")],
+        cols[0:4], cols[4:8], cols[8:12],
+    ]
+    top, row_h = 10, 150
+    kids, defs, qmap = grid_page(th, layout, top=top, row_h=row_h)
+    sw = th.img["swatch"]
+    for i in range(12):
+        r, c = 1 + i // 4, i % 4
+        x = COLS_X[c] + SLOT_W - 50
+        y = top + r * row_h + 24 + 18
+        kids.append(strip("sw%d" % i, sw[0], sw[1], "Parameter %d" % (IDX["_swatch"] + i), x, y, R.SWATCH_W, R.SWATCH_W))
+    kids.extend(paragraph("help", "Note Colors puts a dot of each note's colour in every notehead still to be played. Feedback: "
+                          "notes you play turn green, missed notes red, and a wrong note shows as a red note where you played it. "
+                          "The colours match the LinnStrument's; the five in-between ones are for the black keys.", 16, 572, 1248, 15, th.dim, 20))
     return kids, defs, qmap, grid_page.last_rects
 
 def linn_page(th):
@@ -457,9 +498,12 @@ def stats_page(th):
         kids.append(label("stats%d" % i, "Value", P("text_stats%d" % i), 16, 392 + i * 34, 1248, 32, 18, th.text if i < 2 else th.dim))
     return kids, {}, {}, [rect(0, 0, 0, 0)] * 4
 
-PAGES = [("PLAY", play_page), ("LOAD", load_page), ("GEN", gen_page), ("SETUP", setup_page),
-         ("MORE", more_page), ("LINN", linn_page), ("STATS", stats_page)]
-THEME_ORDER = ["night", "day"]          # sub-tab 1 = night, 2 = day
+# (tab name per theme, builder, themes). Only PLAY has a Day version: every extra tab shows on the
+# MPC as its own button, and the settings pages read fine in the MPC's own dark style.
+PAGES = [(("PLAY", "LIGHT"), play_page, ["night", "day"]), (("LOAD",), load_page, ["night"]), (("GEN",), gen_page, ["night"]),
+         (("SETUP",), setup_page, ["night"]), (("MORE",), more_page, ["night"]), (("SOUND",), sound_page, ["night"]),
+         (("COLOR",), color_page, ["night"]), (("LINN",), linn_page, ["night"]), (("STATS",), stats_page, ["night"])]
+THEME_ORDER = ["night", "day"]
 
 # ---------------------------------------------------------------------------------------------
 def main():
@@ -480,14 +524,15 @@ def main():
     local = overlay_defs()
     defs_all = {}
     tabs, qentries = [], []
-    for ti, (tname, builder) in enumerate(PAGES):
-        for si, thname in enumerate(THEME_ORDER):
+    for ti, (names, builder, page_themes) in enumerate(PAGES):
+        for si, thname in enumerate(page_themes):
             th = themes[thname]
+            tname = names[min(si, len(names) - 1)]
             kids, defs, qmap, rects = builder(th)
             defs_all.update(defs)
-            if tname == "PLAY":
+            if builder is play_page:
                 defs_all["%s_tap" % thname] = container([], actions=[action("Mouse Down", "Toggle Switch", "Data")])
-            bg = th.bg if tname == "PLAY" else (th.bg if thname == "day" else th.panel)
+            bg = th.bg if builder is play_page else (th.bg if thname == "day" else th.panel)
             comp = container(kids, bg=bg)
             tabs.append(o(("version", 1), ("tabName", tname), ("fnKeyIndex", ti), ("fnKeySubIndex", si),
                           ("componentDefinition", comp), ("qlinkBoundsData", rects)))
@@ -510,7 +555,7 @@ def main():
     with open(os.path.join(SKINS, "TUI.json"), "w") as f:
         f.write(dump(tui))
     program = ["tempo", "mode", "hands", "view", "loop_from", "loop_bars", "loop", "play",
-               "timing", "pitch_tol", "chord_tol", "hold", "blip_vol", "metro", "count_in", "mask"]
+               "timing", "pitch_tol", "chord_tol", "hold", "snd_vol", "metro", "count_in", "mask"]
     # Program mode: Q-Link 13..16 top row, like the screen
     order = [13, 14, 15, 16, 9, 10, 11, 12, 5, 6, 7, 8, 1, 2, 3, 4]
     pm = O([("Q-Link %d" % q, IDX[program[order.index(q)]]) for q in range(1, 17)])

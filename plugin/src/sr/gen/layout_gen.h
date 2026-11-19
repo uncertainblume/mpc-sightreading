@@ -34,4 +34,11 @@ constexpr int kLinnStateFrames = 4;
 constexpr int kKeySigFrames = 15, kTimeSigFrames = 15, kDigitFrames = 11, kFingerFrames = 6, kBarFrames = 21;
 constexpr int kNoteNameFrames = 177, kNoteNameLow = 21, kNoteNameHigh = 108;
 constexpr const char* kTimeSigNames[15] = {"4/4", "3/4", "2/4", "2/2", "C", "C|", "3/8", "6/8", "9/8", "12/8", "5/4", "6/4", "7/8", "5/8", "?"};
+// Marks: dot = kMarkDotBase + (place*3 + head)*kDotColours + colour-1 (head 0 black, 1 half, 2 whole);
+// tint = kMarkTintBase + ((trail*2 + place)*3 + head)*2 + tint-1 (1 green, 2 red);
+// ghost = kMarkGhostBase + (trail*2 + ledger)*4 + acc (0 none, 1 sharp, 2 flat, 3 natural);
+// ghost ledger line = kMarkGLedgerBase + trail.
+constexpr int kMarkFrames = 133, kDotColours = 15;
+constexpr int kMarkDotBase = 1, kMarkTintBase = 91, kMarkGhostBase = 115, kMarkGLedgerBase = 131;
+constexpr int kSwatchFrames = 16;
 }} // namespace sr::gen

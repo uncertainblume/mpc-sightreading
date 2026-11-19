@@ -175,6 +175,56 @@ static int selftest()
         eng.process(st, in, 0, 128, 44100);
         CHECK(eng.currentStep() >= 0);
     }
+    // --- noteheads know their notes (colour dots, green/red marks) -------------------------------
+    {
+        std::vector<int> headsPerNote(sc.notes.size(), 0);
+        for (size_t k = 0; k < sc.slots.size(); ++k)
+        {
+            const Slot& sl = sc.slots[k];
+            for (uint32_t h = 0; h < sl.headCount; ++h)
+            {
+                const HeadRef& hr = sc.heads[sl.headFirst + h];
+                CHECK(hr.note >= 0 && hr.note < (int)sc.notes.size());
+                if (hr.note < 0) continue;
+                CHECK(sc.notes[(size_t)hr.note].hand == hr.staff);
+                CHECK(sl.cells[hr.row] != 0);                 // a head is drawn where the mark goes
+                CHECK(sl.time >= sc.notes[(size_t)hr.note].start && sl.time < sc.notes[(size_t)hr.note].end);
+                ++headsPerNote[(size_t)hr.note];
+            }
+        }
+        for (size_t i = 0; i < sc.notes.size(); ++i) CHECK(headsPerNote[i] >= 1);
+        for (size_t i = 0; i < sc.notes.size(); ++i) if (sc.notes[i].pitch == 84) CHECK(headsPerNote[i] == 2);   // tied over the barline
+    }
+    // --- engine: re-strikes are not mistakes; wrong notes are remembered per step -----------------
+    {
+        std::vector<uint8_t> stepState(sc.steps.size()), noteState(sc.notes.size()), stepWrong(sc.steps.size());
+        Engine eng; EngineSettings st; st.mode = 0;
+        eng.setScore(&sc, stepState.data(), noteState.data(), stepWrong.data());
+        Engine::NoteIn in[2];
+        in[0] = {0, 72, true}; eng.process(st, in, 1, 128, 44100);     // half of the first chord
+        in[0] = {0, 72, true}; eng.process(st, in, 1, 128, 44100);     // the same note again
+        CHECK(eng.wrongs() == 0 && eng.currentStep() == 0);
+        in[0] = {0, 48, true}; eng.process(st, in, 1, 128, 44100);     // completes step 0
+        in[0] = {0, 48, true}; eng.process(st, in, 1, 128, 44100);     // a bounce on the chord just played
+        CHECK(eng.wrongs() == 0 && eng.currentStep() == 1);
+        CHECK(eng.lastDoneStep() == 0);
+        in[0] = {0, 75, true}; eng.process(st, in, 1, 128, 44100);     // D# for D: wrong
+        CHECK(eng.wrongs() == 1 && stepWrong[1] == 75);
+        for (int i = 0; i < 300; ++i) eng.process(st, in, 0, 128, 44100);
+        in[0] = {0, 74, true}; eng.process(st, in, 1, 128, 44100);     // D
+        for (int i = 0; i < 300; ++i) eng.process(st, in, 0, 128, 44100);
+        in[0] = {0, 74, true}; eng.process(st, in, 1, 128, 44100);     // D again, 0.9 s later: a mistake
+        CHECK(eng.wrongs() == 2 && stepWrong[2] == 74);
+        eng.restart();
+        CHECK(stepWrong[1] == 0 && stepWrong[2] == 0);
+        // clock modes: striking the chord again just after its beat is not wrong either
+        st.mode = 2; st.countInBars = 0; st.startMode = 1;
+        eng.restart(); eng.setPlaying(true, st);
+        in[0] = {0, 72, true}; in[1] = {0, 48, true}; eng.process(st, in, 2, 128, 44100);
+        for (int i = 0; i < 20; ++i) eng.process(st, in, 0, 128, 44100);
+        in[0] = {0, 72, true}; eng.process(st, in, 1, 128, 44100);
+        CHECK(eng.wrongs() == 0 && eng.hits() == 2);
+    }
     // --- engine: rhythm mode -----------------------------------------------------------------
     {
         std::vector<uint8_t> stepState(sc.steps.size()), noteState(sc.notes.size());

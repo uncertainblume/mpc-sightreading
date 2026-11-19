@@ -24,6 +24,8 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace sr {
@@ -59,6 +61,15 @@ struct Slot
     int32_t step = -1;                   // step that starts here, or -1
     uint16_t measure = 0;
     bool measureStart = false;
+    uint32_t headFirst = 0, headCount = 0;   // into Score::heads
+};
+
+// A notehead drawn in a slot: where it is and which note it shows (for colour dots and the
+// green/red marks). Tied continuations point at the same note as the head they continue.
+struct HeadRef
+{
+    int32_t note = -1;                   // index into Score::notes
+    uint8_t row = 0, head = 0, place = 0, staff = 0;   // head 0 black, 1 half, 2 whole; place 1 = displaced
 };
 
 struct TempoPoint { int32_t unit; double usPerQuarter; };
@@ -74,6 +85,7 @@ struct Score
     std::vector<Step> steps;
     std::vector<Measure> measures;
     std::vector<Slot> slots;
+    std::vector<HeadRef> heads;          // grouped by slot (Slot::headFirst/headCount)
     std::vector<TempoPoint> tempo;
     int32_t endUnit = 0;
     int low[2] = {127, 127}, high[2] = {0, 0};   // pitch range per hand
@@ -176,6 +188,7 @@ struct Sym
     int stemEnd = 0;                   // staff position where the stem ends
     bool tupletMark = false;
     int slot = 0;                      // first display slot
+    int32_t segStart = 0;              // onset of the note this symbol (or its tie chain) shows
 };
 
 // Cell specification before encoding to a frame index.
@@ -484,7 +497,7 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
                 int32_t pos = a;
                 for (size_t k = 0; k < vals.size(); ++k)
                 {
-                    Sym y; y.start = pos; y.val = vals[k]; y.rest = s.rest;
+                    Sym y; y.start = pos; y.val = vals[k]; y.rest = s.rest; y.segStart = s.a;
                     if (!s.rest)
                     {
                         y.pitches = *s.p; std::sort(y.pitches.begin(), y.pitches.end());
@@ -537,6 +550,15 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
 
     // ---- 8. per-symbol layout: positions, stems, beams, accidentals -----------------------------
     std::vector<std::vector<CellSpec>> grid2((size_t)sc.slots.size(), std::vector<CellSpec>(gen::kRows));
+    std::vector<std::pair<int, HeadRef>> headRefs;     // (slot, head)
+    auto noteIndex = [&sc](int32_t start, int hand, int pitch) -> int32_t {
+        // notes are sorted by (start, hand, pitch) and unique on that triple
+        auto it = std::lower_bound(sc.notes.begin(), sc.notes.end(), std::make_tuple(start, hand, pitch),
+            [](const PlayNote& a, const std::tuple<int32_t, int, int>& k) {
+                return std::make_tuple(a.start, (int)a.hand, (int)a.pitch) < k; });
+        if (it == sc.notes.end() || it->start != start || it->hand != hand || it->pitch != pitch) return -1;
+        return (int32_t)(it - sc.notes.begin());
+    };
     auto put = [&grid2](int slot, int row, const CellSpec& s) {
         if (slot < 0 || slot >= (int)grid2.size() || row < 0 || row >= gen::kRows) return;
         CellSpec& c = grid2[(size_t)slot][(size_t)row];
@@ -659,14 +681,14 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
                 continue;
             }
             // positions, sorted ascending
-            struct H { int pos; int acc; bool showAcc; bool displaced; };
+            struct H { int pos; int acc; bool showAcc; bool displaced; int32_t note; };
             std::vector<H> heads;
             for (uint8_t p : y.pitches)
             {
                 Spelling sp = spellPitch(p, m.keySf, m.minor, prefOf(yi, p));
                 int pos = staffPosition(sp, staff);
                 int di = std::max(0, std::min(127, diatonicIndex(sp)));
-                H h; h.pos = clampPos(staff, pos); h.acc = sp.acc; h.displaced = false;
+                H h; h.pos = clampPos(staff, pos); h.acc = sp.acc; h.displaced = false; h.note = noteIndex(y.segStart, hand, p);
                 h.showAcc = !y.tieIn && state[di] != sp.acc;
                 state[di] = sp.acc;
                 heads.push_back(h);
@@ -699,6 +721,12 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
                     c.e = startNote ? (y.stemDir > 0 ? gen::kUpStart : gen::kDownStart) : (y.stemDir > 0 ? gen::kThruUp : gen::kThruDown);
                 }
                 put(y.slot, rowOf(staff, h.pos), c);
+                if (h.note >= 0)
+                {
+                    HeadRef hr; hr.note = h.note; hr.row = (uint8_t)rowOf(staff, h.pos); hr.head = (uint8_t)head;
+                    hr.place = (uint8_t)(h.displaced ? 1 : 0); hr.staff = (uint8_t)staff;
+                    headRefs.push_back({y.slot, hr});
+                }
                 // ledger lines between the staff and this note
                 if (h.pos >= 10) for (int lp = 10; lp <= h.pos; lp += 2) ledgerOn(y.slot, rowOf(staff, lp));
                 if (h.pos <= -2) for (int lp = -2; lp >= h.pos; lp -= 2) ledgerOn(y.slot, rowOf(staff, lp));
@@ -762,6 +790,18 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
     for (size_t s = 0; s < sc.slots.size(); ++s)
         for (int r = 0; r < gen::kRows; ++r)
             sc.slots[s].cells[r] = encodeCell(r, grid2[s][(size_t)r]);
+    // heads by slot; within a slot the later one wins a shared row, as in put()
+    std::stable_sort(headRefs.begin(), headRefs.end(), [](const std::pair<int, HeadRef>& a, const std::pair<int, HeadRef>& b) { return a.first < b.first; });
+    sc.heads.reserve(headRefs.size());
+    for (size_t i = 0; i < headRefs.size(); ++i)
+    {
+        int sl = headRefs[i].first;
+        if (sl < 0 || sl >= (int)sc.slots.size()) continue;
+        Slot& slot = sc.slots[(size_t)sl];
+        if (slot.headCount == 0) slot.headFirst = (uint32_t)sc.heads.size();
+        sc.heads.push_back(headRefs[i].second);
+        ++slot.headCount;
+    }
 
     sc.title = smf.title;
     return true;

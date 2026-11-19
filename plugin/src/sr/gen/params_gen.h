@@ -4,7 +4,7 @@ namespace sr { namespace gen {
 enum ParamKind { kFloat = 0, kInt = 1, kBool = 2, kChoice = 3, kTrigger = 4, kNote = 5 };
 struct ControlDef { const char* id; const char* name; int kind; float min, max, def; const char* unit; const char* choices; };
 constexpr ControlDef kControls[] = {
-    {"blip_vol", "Blip Vol", 1, 0.0, 100.0, 50.0, "%", ""},
+    {"blip_vol", "Master Vol", 1, 0.0, 100.0, 50.0, "%", ""},
     {"mode", "Mode", 3, 0, 2, 0, "", "Wait|Flow|Rhythm"},
     {"tempo", "Tempo", 1, 20.0, 200.0, 100.0, "%", ""},
     {"hands", "Hands", 3, 0, 2, 0, "", "Both|Right|Left"},
@@ -21,7 +21,7 @@ constexpr ControlDef kControls[] = {
     {"wrong", "Wrong Note", 3, 0, 2, 1, "", "Ignore|Count|Stop"},
     {"count_in", "Count-in", 3, 0, 2, 1, "", "Off|1 Bar|2 Bars"},
     {"metro", "Metronome", 3, 0, 2, 0, "", "Off|On|Accent"},
-    {"err_blip", "Error Blip", 2, 0.0, 1.0, 1.0, "", ""},
+    {"err_blip", "Error Sound", 2, 0.0, 1.0, 1.0, "", ""},
     {"remind", "Remind", 3, 0, 3, 2, "", "Off|Every 5|Every 10|Every 20"},
     {"remind_max", "Reminders", 1, 1.0, 20.0, 3.0, "", ""},
     {"flash", "Red Flash", 2, 0.0, 1.0, 1.0, "", ""},
@@ -68,8 +68,35 @@ constexpr ControlDef kControls[] = {
     {"linn_ch", "Linn Ch", 1, 1.0, 16.0, 1.0, "", ""},
     {"linn_left", "Left-Handed", 2, 0.0, 1.0, 0.0, "", ""},
     {"linn_sync", "Read Key", 4, 0.0, 1.0, 0.0, "", ""},
+    {"note_colors", "Note Colors", 2, 0.0, 1.0, 1.0, "", ""},
+    {"feedback", "Feedback", 3, 0, 2, 2, "", "Off|Green|Green+Red"},
+    {"col_reset", "Reset Colors", 4, 0.0, 1.0, 0.0, "", ""},
+    {"col_c", "C", 3, 0, 15, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_cs", "C#", 3, 0, 15, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_d", "D", 3, 0, 15, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_ds", "D#", 3, 0, 15, 12, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_e", "E", 3, 0, 15, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_f", "F", 3, 0, 15, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_fs", "F#", 3, 0, 15, 13, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_g", "G", 3, 0, 15, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_gs", "G#", 3, 0, 15, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_a", "A", 3, 0, 15, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_as", "A#", 3, 0, 15, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"col_b", "B", 3, 0, 15, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber"},
+    {"snd_type", "Sound", 3, 0, 5, 0, "", "Wood|Soft Tick|Low Thud|Bell|Sine|Square"},
+    {"snd_vol", "Error Vol", 1, 0.0, 100.0, 30.0, "%", ""},
+    {"snd_pitch", "Pitch", 1, -24.0, 24.0, 0.0, "st", ""},
+    {"snd_attack", "Attack", 1, 0.0, 200.0, 2.0, "ms", ""},
+    {"snd_decay", "Decay", 1, 5.0, 2000.0, 160.0, "ms", ""},
+    {"snd_sustain", "Sustain", 1, 0.0, 100.0, 0.0, "%", ""},
+    {"snd_release", "Release", 1, 5.0, 2000.0, 60.0, "ms", ""},
+    {"snd_length", "Length", 1, 0.0, 2000.0, 0.0, "ms", ""},
+    {"snd_remind", "Remind Vol", 1, 0.0, 100.0, 50.0, "%", ""},
+    {"click_type", "Click", 3, 0, 2, 0, "", "Tick|Wood|Beep"},
+    {"click_vol", "Click Vol", 1, 0.0, 100.0, 40.0, "%", ""},
+    {"snd_test", "Test", 4, 0.0, 1.0, 0.0, "", ""},
 };
-constexpr int kNumControls = 64;
+constexpr int kNumControls = 91;
 enum ControlId {
     P_BLIP_VOL = 0,
     P_MODE = 1,
@@ -135,8 +162,35 @@ enum ControlId {
     P_LINN_CH = 61,
     P_LINN_LEFT = 62,
     P_LINN_SYNC = 63,
+    P_NOTE_COLORS = 64,
+    P_FEEDBACK = 65,
+    P_COL_RESET = 66,
+    P_COL_C = 67,
+    P_COL_CS = 68,
+    P_COL_D = 69,
+    P_COL_DS = 70,
+    P_COL_E = 71,
+    P_COL_F = 72,
+    P_COL_FS = 73,
+    P_COL_G = 74,
+    P_COL_GS = 75,
+    P_COL_A = 76,
+    P_COL_AS = 77,
+    P_COL_B = 78,
+    P_SND_TYPE = 79,
+    P_SND_VOL = 80,
+    P_SND_PITCH = 81,
+    P_SND_ATTACK = 82,
+    P_SND_DECAY = 83,
+    P_SND_SUSTAIN = 84,
+    P_SND_RELEASE = 85,
+    P_SND_LENGTH = 86,
+    P_SND_REMIND = 87,
+    P_CLICK_TYPE = 88,
+    P_CLICK_VOL = 89,
+    P_SND_TEST = 90,
 };
-constexpr int kTextBase = 64, kNumTexts = 22;
+constexpr int kTextBase = 91, kNumTexts = 22;
 enum TextId {
     T_TITLE = 0,
     T_FOLDER_NAME = 1,
@@ -161,56 +215,62 @@ enum TextId {
     T_MPC_KEY = 20,
     T_GEN_DESC = 21,
 };
-constexpr int kD_cell = 86, kN_cell = 660;
-constexpr int kD_overlay = 746, kN_overlay = 20;  // 6 frames
+constexpr int kD_cell = 113, kN_cell = 660;
+constexpr int kD_mark = 773, kN_mark = 660;  // 133 frames
+constexpr int kF_mark = 133;
+constexpr int kD_overlay = 1433, kN_overlay = 20;  // 6 frames
 constexpr int kF_overlay = 6;
-constexpr int kD_mask = 766, kN_mask = 2;  // 3 frames
+constexpr int kD_mask = 1453, kN_mask = 2;  // 3 frames
 constexpr int kF_mask = 3;
-constexpr int kD_barline = 768, kN_barline = 21;  // 6 frames
+constexpr int kD_barline = 1455, kN_barline = 21;  // 6 frames
 constexpr int kF_barline = 6;
-constexpr int kD_keysig = 789, kN_keysig = 1;  // 15 frames
+constexpr int kD_keysig = 1476, kN_keysig = 1;  // 15 frames
 constexpr int kF_keysig = 15;
-constexpr int kD_timesig = 790, kN_timesig = 1;  // 15 frames
+constexpr int kD_timesig = 1477, kN_timesig = 1;  // 15 frames
 constexpr int kF_timesig = 15;
-constexpr int kD_flash = 791, kN_flash = 1;  // 3 frames
+constexpr int kD_flash = 1478, kN_flash = 1;  // 3 frames
 constexpr int kF_flash = 3;
-constexpr int kD_status = 792, kN_status = 1;  // 10 frames
+constexpr int kD_status = 1479, kN_status = 1;  // 10 frames
 constexpr int kF_status = 10;
-constexpr int kD_handicon = 793, kN_handicon = 1;  // 3 frames
+constexpr int kD_handicon = 1480, kN_handicon = 1;  // 3 frames
 constexpr int kF_handicon = 3;
-constexpr int kD_d_bar = 794, kN_d_bar = 3;  // 11 frames
+constexpr int kD_d_bar = 1481, kN_d_bar = 3;  // 11 frames
 constexpr int kF_d_bar = 11;
-constexpr int kD_d_bars = 797, kN_d_bars = 3;  // 11 frames
+constexpr int kD_d_bars = 1484, kN_d_bars = 3;  // 11 frames
 constexpr int kF_d_bars = 11;
-constexpr int kD_d_acc = 800, kN_d_acc = 3;  // 11 frames
+constexpr int kD_d_acc = 1487, kN_d_acc = 3;  // 11 frames
 constexpr int kF_d_acc = 11;
-constexpr int kD_d_bpm = 803, kN_d_bpm = 3;  // 11 frames
+constexpr int kD_d_bpm = 1490, kN_d_bpm = 3;  // 11 frames
 constexpr int kF_d_bpm = 11;
-constexpr int kD_d_err = 806, kN_d_err = 3;  // 11 frames
+constexpr int kD_d_err = 1493, kN_d_err = 3;  // 11 frames
 constexpr int kF_d_err = 11;
-constexpr int kD_nextname = 809, kN_nextname = 1;  // 177 frames
+constexpr int kD_nextname = 1496, kN_nextname = 1;  // 177 frames
 constexpr int kF_nextname = 177;
-constexpr int kD_playedname = 810, kN_playedname = 1;  // 177 frames
+constexpr int kD_playedname = 1497, kN_playedname = 1;  // 177 frames
 constexpr int kF_playedname = 177;
-constexpr int kD_finger = 811, kN_finger = 2;  // 6 frames
+constexpr int kD_finger = 1498, kN_finger = 2;  // 6 frames
 constexpr int kF_finger = 6;
-constexpr int kD_mnum = 813, kN_mnum = 6;  // 11 frames
+constexpr int kD_mnum = 1500, kN_mnum = 6;  // 11 frames
 constexpr int kF_mnum = 11;
-constexpr int kD_progress = 819, kN_progress = 1;
-constexpr int kD_linnstate = 820, kN_linnstate = 1;  // 4 frames
+constexpr int kD_progress = 1506, kN_progress = 1;
+constexpr int kD_linnstate = 1507, kN_linnstate = 1;  // 4 frames
 constexpr int kF_linnstate = 4;
-constexpr int kD_statbar = 821, kN_statbar = 16;  // 21 frames
+constexpr int kD_statbar = 1508, kN_statbar = 16;  // 21 frames
 constexpr int kF_statbar = 21;
-constexpr int kD_d_best = 837, kN_d_best = 3;  // 11 frames
+constexpr int kD_d_best = 1524, kN_d_best = 3;  // 11 frames
 constexpr int kF_d_best = 11;
-constexpr int kD_d_last = 840, kN_d_last = 3;  // 11 frames
+constexpr int kD_d_last = 1527, kN_d_last = 3;  // 11 frames
 constexpr int kF_d_last = 11;
-constexpr int kD_d_passes = 843, kN_d_passes = 3;  // 11 frames
+constexpr int kD_d_passes = 1530, kN_d_passes = 3;  // 11 frames
 constexpr int kF_d_passes = 11;
-constexpr int kD_d_minutes = 846, kN_d_minutes = 4;  // 11 frames
+constexpr int kD_d_minutes = 1533, kN_d_minutes = 4;  // 11 frames
 constexpr int kF_d_minutes = 11;
-constexpr int kD_d_streak = 850, kN_d_streak = 3;  // 11 frames
+constexpr int kD_d_streak = 1537, kN_d_streak = 3;  // 11 frames
 constexpr int kF_d_streak = 11;
-constexpr int kDisplayBase = 86;
-constexpr int kNumParams = 853;
+constexpr int kD_nextname_lh = 1540, kN_nextname_lh = 1;  // 177 frames
+constexpr int kF_nextname_lh = 177;
+constexpr int kD_swatch = 1541, kN_swatch = 12;  // 16 frames
+constexpr int kF_swatch = 16;
+constexpr int kDisplayBase = 113;
+constexpr int kNumParams = 1553;
 }} // namespace sr::gen

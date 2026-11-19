@@ -200,6 +200,95 @@ def draw_cell(key, cls, ink):
         return im
     return im
 
+# ---------------------------------------------------------------------------------------------
+# Marks (0.2.0): drawn above the staff lines, one widget per cell, same rectangle as the cell
+# ---------------------------------------------------------------------------------------------
+HEAD_GLYPHS = ["noteheadBlack", "noteheadHalf", "noteheadWhole"]
+
+def head_x(head, place):
+    if place == 0:
+        return G.HEAD_X0
+    return G.HEAD_X0 + 10 if head == 2 else G.DISP_X0
+
+def head_box(head, place):
+    """Bounding box (x0, y0, x1, y1) of a notehead glyph in a cell frame."""
+    b = MUSIC.getbbox(ch(HEAD_GLYPHS[head]), anchor="ls")
+    x = head_x(head, place)
+    return (x + b[0], CY + b[1], x + b[2], CY + b[3])
+
+def theme_trail(theme):
+    """Opacity of a mark in a passed column: about what the played-note fade leaves of a head."""
+    return {"day": 0.42, "night": 0.40}[theme]
+
+DOT_SIZES = (8.0, 6.0, 7.0)     # dot diameter in px for black, half and whole heads
+
+def mark_image(fr, theme):
+    t = THEMES[theme]
+    kind, trail, place, x3, x4 = fr
+    S4 = 4                                            # draw at 4x and scale down for clean edges
+    im = Image.new("RGBA", (CW, CH), (0, 0, 0, 0))
+    if kind == G.MARK_EMPTY:
+        return im
+    if kind == G.MARK_DOT:
+        head, colour = x3, G.PALETTE[x4][1]
+        x0, y0, x1, y1 = head_box(head, place)
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+        big = Image.new("RGBA", (CW * S4, CH * S4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(big)
+        r = DOT_SIZES[head] / 2.0 * S4
+        o = 1.0 * S4                                  # dark edge: light colours still read on light heads and paper
+        d.ellipse([cx * S4 - r - o, cy * S4 - r - o, cx * S4 + r + o, cy * S4 + r + o], fill=(16, 16, 18, 235))
+        d.ellipse([cx * S4 - r, cy * S4 - r, cx * S4 + r, cy * S4 + r], fill=rgba(colour))
+        return big.resize((CW, CH), Image.LANCZOS)
+    if kind == G.MARK_TINT:
+        head, tint = x3, x4
+        col = t["good"] if tint == 1 else t["missed"]
+        d = ImageDraw.Draw(im)
+        a = int(255 * (theme_trail(theme) + 0.12 if trail else 1.0))
+        d.text((head_x(head, place), CY), ch(HEAD_GLYPHS[head]), font=MUSIC, fill=rgba(col, a), anchor="ls",
+               stroke_width=1, stroke_fill=rgba(col, a))
+        return im
+    if kind in (G.MARK_GHOST, G.MARK_GLEDGER):
+        col = t["missed"]
+        a = int(255 * (0.55 if trail else 0.92))
+        d = ImageDraw.Draw(im)
+        ledger = x3 if kind == G.MARK_GHOST else 1
+        if ledger:
+            d.rectangle([G.HEAD_X0 - 5, CY - 1, G.HEAD_X0 + G.HEAD_W + 4, CY], fill=rgba(col, a))
+        if kind == G.MARK_GHOST:
+            acc = x4
+            d.text((G.HEAD_X0, CY), ch("noteheadBlack"), font=MUSIC, fill=rgba(col, a), anchor="ls")
+            if acc:
+                an = ["", "sharp", "flat", "natural"][acc]
+                w = glyph_width(an)
+                d.text((G.ACC_X1 - w, CY), ch(an), font=MUSIC, fill=rgba(col, a), anchor="ls")
+        return im
+    return im
+
+def mark_strip(theme):
+    frames = G.MARK_FRAMES
+    strip = Image.new("RGBA", (CW, CH * len(frames)), (0, 0, 0, 0))
+    for i, fr in enumerate(frames):
+        strip.paste(mark_image(fr, theme), (0, i * CH))
+    return strip
+
+SWATCH_W = 34
+def swatch_strip(theme):
+    t = THEMES[theme]
+    frames = []
+    S4 = 4
+    for name, colour in G.PALETTE:
+        big = Image.new("RGBA", (SWATCH_W * S4, SWATCH_W * S4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(big)
+        box = [2 * S4, 2 * S4, (SWATCH_W - 2) * S4, (SWATCH_W - 2) * S4]
+        if colour is None:
+            d.rounded_rectangle(box, 6 * S4, outline=rgba(t["text_dim"]), width=2 * S4)
+            d.line([(box[0] + 6 * S4, box[3] - 6 * S4), (box[2] - 6 * S4, box[1] + 6 * S4)], fill=rgba(t["text_dim"]), width=2 * S4)
+        else:
+            d.rounded_rectangle(box, 6 * S4, fill=rgba(colour), outline=rgba(t["panel_line"]), width=2 * S4)
+        frames.append(big.resize((SWATCH_W, SWATCH_W), Image.LANCZOS))
+    return stack(frames)
+
 def cell_strip(cls, theme):
     ink = rgba(THEMES[theme]["ink"])
     frames = G.CATALOGUES[cls]
@@ -427,6 +516,8 @@ def render_theme(theme, out):
         img.save(os.path.join(out, "%s_timesig%d.png" % (theme, staff)), optimize=True)
         meta["timesig%d" % staff] = ("%s_timesig%d.png" % (theme, staff), len(G.TIMESIG_FRAMES), top)
     staff_image(theme).save(os.path.join(out, "%s_staff.png" % theme), optimize=True)
+    mark_strip(theme).save(os.path.join(out, "%s_marks.png" % theme), optimize=True)
+    meta["marks"] = ("%s_marks.png" % theme, len(G.MARK_FRAMES))
     return meta
 
 if __name__ == "__main__":
@@ -467,6 +558,7 @@ def ui_images(theme, out):
     save("statbar", bar_strip(theme, STATBAR_W, STATBAR_H), G.BAR_FRAMES, STATBAR_W, STATBAR_H)
     save("flash", flash_strip(theme, G.TAB_W, G.GRID_BOTTOM - G.GRID_TOP), len(G.FLASH_FRAMES), G.TAB_W, G.GRID_BOTTOM - G.GRID_TOP)
     save("knob", knob_strip(theme), KNOB_FRAMES, KNOB_SIZE, KNOB_SIZE)
+    save("swatch", swatch_strip(theme), G.SWATCH_FRAMES, SWATCH_W, SWATCH_W)
     return meta
 
 def knob_strip(theme):

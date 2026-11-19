@@ -5,7 +5,8 @@
 
 Every folder gets an index.tsv (file, title, composer, level, source) that the plugin's LOAD
 page reads. Drills are deterministic (fixed random seeds), so they are the same on every build.
-Practise one hand with the Hands setting; two-hand drills are written for both.
+Scales and arpeggios come one hand at a time (Scales, Scales LH, ...); everything for both hands at
+once is in Two Hands. With Hands = Both, a file with two hands waits for both.
 """
 import os, random, sys
 
@@ -57,18 +58,26 @@ def rh_tonic(root):
     return 60 + root if root <= 7 else 48 + root
 
 # ---------------------------------------------------------------------------------------------
+FIFTHS = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]
+
 def scales():
+    """One hand at a time (right in Scales, left in Scales LH); hands together are in Two Hands.
+    Files are numbered so the list runs round the circle of fifths, majors first."""
+    n = 0
     for mode in ("Major", "Natural Minor", "Harmonic Minor"):
-        for root in [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]:
+        for root in FIFTHS:
+            n += 1
             t = rh_tonic(root)
             sf, mi = key_sf(root, mode)
-            rh = seq(scale_pitches(t, mode), Q)
-            lh = seq(scale_pitches(t - 24, mode), Q, vel=70)
             lvl = 1 if abs(sf) <= 1 else (2 if abs(sf) <= 3 else 3)
-            save("Scales", "%s_%s.mid" % (NAMES[root], mode.replace(" ", "")), "%s %s scale" % (NAMES[root], mode.lower()),
-                 lvl, [("Right", 0, rh), ("Left", 1, lh)], 72, key=sf, minor=mi)
+            base = "%02d_%s_%s" % (n, NAMES[root], mode.replace(" ", ""))
+            title = "%s %s scale" % (NAMES[root], mode.lower())
+            save("Scales", base + ".mid", title, lvl, [("Right", 0, seq(scale_pitches(t, mode), Q))], 72, key=sf, minor=mi)
+            save("Scales LH", base + "_LH.mid", title + ", left hand", lvl, [("Left", 1, seq(scale_pitches(t - 24, mode), Q, vel=70))], 72, key=sf, minor=mi)
+            if mode == "Major":
+                save("Two Hands", "scale_%s.mid" % base, title + ", hands together", lvl + 1,
+                     [("Right", 0, seq(scale_pitches(t, mode), Q)), ("Left", 1, seq(scale_pitches(t - 24, mode), Q, vel=70))], 72, key=sf, minor=mi)
     for mode in ("Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Major Pentatonic", "Minor Pentatonic", "Blues"):
-        root = 2 if mode == "Dorian" else 0
         for root in (0, 7):
             t = rh_tonic(root)
             sf, mi = key_sf(root, mode) if mode in MODE_SF_SHIFT or mode in ("Minor Pentatonic", "Blues") else (MAJOR_SF[root], False)
@@ -76,16 +85,23 @@ def scales():
                  [("Right", 0, seq(scale_pitches(t, mode, 2 if len(MODES[mode]) < 7 else 1), Q // 2 if len(MODES[mode]) < 7 else Q))], 72, key=sf, minor=mi)
 
 def arpeggios():
+    n = 0
     for minor in (False, True):
-        for root in [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]:
+        for root in FIFTHS:
+            n += 1
             t = rh_tonic(root)
             third = 3 if minor else 4
             up = [t, t + third, t + 7, t + 12, t + 12 + third, t + 19, t + 24]
             pat = up + up[-2::-1]
             sf, mi = (MINOR_SF[root], True) if minor else (MAJOR_SF[root], False)
-            save("Arpeggios", "%s_%s_arpeggio.mid" % (NAMES[root], "minor" if minor else "major"),
-                 "%s %s arpeggio, 2 octaves" % (NAMES[root], "minor" if minor else "major"), 2 if abs(sf) < 3 else 3,
-                 [("Right", 0, seq(pat, Q // 2)), ("Left", 1, seq([p - 24 for p in pat], Q // 2, vel=70))], 76, key=sf, minor=mi)
+            lvl = 2 if abs(sf) < 3 else 3
+            base = "%02d_%s_%s_arpeggio" % (n, NAMES[root], "minor" if minor else "major")
+            title = "%s %s arpeggio, 2 octaves" % (NAMES[root], "minor" if minor else "major")
+            save("Arpeggios", base + ".mid", title, lvl, [("Right", 0, seq(pat, Q // 2))], 76, key=sf, minor=mi)
+            save("Arpeggios LH", base + "_LH.mid", title + ", left hand", lvl, [("Left", 1, seq([p - 24 for p in pat], Q // 2, vel=70))], 76, key=sf, minor=mi)
+            if not minor and root in (0, 7, 2, 5):
+                save("Two Hands", "arpeggio_%s.mid" % base, title + ", hands together", lvl + 1,
+                     [("Right", 0, seq(pat, Q // 2)), ("Left", 1, seq([p - 24 for p in pat], Q // 2, vel=70))], 76, key=sf, minor=mi)
 
 def intervals():
     rnd = random.Random(7)

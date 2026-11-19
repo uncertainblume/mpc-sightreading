@@ -16,7 +16,7 @@ NOTE = "note"     # int displayed as a note name
 
 # id, name, kind, (min, max, default) or (choices, default), unit
 CONTROL = [
-    ("blip_vol",   "Blip Vol",    "int",    (0, 100, 50), "%"),          # parameter 0: harmless
+    ("blip_vol",   "Master Vol",  "int",    (0, 100, 50), "%"),          # parameter 0: harmless (id kept for saved projects)
     ("mode",       "Mode",        "choice", (["Wait", "Flow", "Rhythm"], 0), ""),
     ("tempo",      "Tempo",       "int",    (20, 200, 100), "%"),
     ("hands",      "Hands",       "choice", (["Both", "Right", "Left"], 0), ""),
@@ -33,7 +33,7 @@ CONTROL = [
     ("wrong",      "Wrong Note",  "choice", (["Ignore", "Count", "Stop"], 1), ""),
     ("count_in",   "Count-in",    "choice", (["Off", "1 Bar", "2 Bars"], 1), ""),
     ("metro",      "Metronome",   "choice", (["Off", "On", "Accent"], 0), ""),
-    ("err_blip",   "Error Blip",  "bool",   (0, 1, 1), ""),
+    ("err_blip",   "Error Sound", "bool",   (0, 1, 1), ""),
     ("remind",     "Remind",      "choice", (["Off", "Every 5", "Every 10", "Every 20"], 2), ""),
     ("remind_max", "Reminders",   "int",    (1, 20, 3), ""),
     ("flash",      "Red Flash",   "bool",   (0, 1, 1), ""),
@@ -84,6 +84,24 @@ CONTROL = [
     ("linn_ch",    "Linn Ch",     "int",    (1, 16, 1), ""),
     ("linn_left",  "Left-Handed", "bool",   (0, 1, 0), ""),
     ("linn_sync",  "Read Key",    "trigger",(0, 1, 0), ""),
+    # COLOR (0.2.0): note colour dots and played-note marks
+    ("note_colors","Note Colors", "bool",   (0, 1, 1), ""),
+    ("feedback",   "Feedback",    "choice", (["Off", "Green", "Green+Red"], 2), ""),
+    ("col_reset",  "Reset Colors","trigger",(0, 1, 0), ""),
+] + [("col_%s" % pid, name, "choice", (G.PALETTE_NAMES, d), "") for (pid, name, d) in G.NOTE_COLOUR_DEFAULTS] + [
+    # SOUND (0.2.0)
+    ("snd_type",   "Sound",       "choice", (G.SOUND_TYPES, 0), ""),
+    ("snd_vol",    "Error Vol",   "int",    (0, 100, 30), "%"),
+    ("snd_pitch",  "Pitch",       "int",    (-24, 24, 0), "st"),
+    ("snd_attack", "Attack",      "int",    (0, 200, 2), "ms"),
+    ("snd_decay",  "Decay",       "int",    (5, 2000, 160), "ms"),
+    ("snd_sustain","Sustain",     "int",    (0, 100, 0), "%"),
+    ("snd_release","Release",     "int",    (5, 2000, 60), "ms"),
+    ("snd_length", "Length",      "int",    (0, 2000, 0), "ms"),
+    ("snd_remind", "Remind Vol",  "int",    (0, 100, 50), "%"),
+    ("click_type", "Click",       "choice", (G.CLICK_TYPES, 0), ""),
+    ("click_vol",  "Click Vol",   "int",    (0, 100, 40), "%"),
+    ("snd_test",   "Test",        "trigger",(0, 1, 0), ""),
 ]
 
 TEXTS = ["title", "folder_name", "row0", "row1", "row2", "row3", "row4", "row5", "row6", "row7",
@@ -94,6 +112,7 @@ TEXTS = ["title", "folder_name", "row0", "row1", "row2", "row3", "row4", "row5",
 def display_groups():
     return [
         ("cell", G.SLOTS * G.NUM_ROWS, None),          # frames depend on the row class
+        ("mark", G.SLOTS * G.NUM_ROWS, len(G.MARK_FRAMES)),   # colour dots, green/red heads, wrong-note ghosts
         ("overlay", G.SLOTS, len(G.OVERLAY_FRAMES)),
         ("mask", 2, len(G.STAFFMASK_FRAMES)),
         ("barline", G.SLOTS + 1, len(G.BARLINE_FRAMES)),
@@ -119,6 +138,8 @@ def display_groups():
         ("d_passes", 3, len(G.DIGIT_FRAMES)),
         ("d_minutes", 4, len(G.DIGIT_FRAMES)),
         ("d_streak", 3, len(G.DIGIT_FRAMES)),
+        ("nextname_lh", 1, len(G.notename_frames())),  # 0.2.0: the left hand's next note
+        ("swatch", 12, G.SWATCH_FRAMES),               # 0.2.0: COLOR page swatches (mirror col_*)
     ]
 
 def build_index():

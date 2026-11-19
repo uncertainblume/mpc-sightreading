@@ -58,11 +58,11 @@ public:
     static constexpr int kScreen = gen::kSlots;
 
     // ---- score -------------------------------------------------------------------------------
-    // The score must outlive its use here; stepState must have one byte per step and
-    // noteState one byte per note (allocated by the loader).
-    void setScore(const Score* s, uint8_t* stepState, uint8_t* noteState)
+    // The score must outlive its use here; stepState and stepWrong must have one byte per step
+    // and noteState one byte per note (allocated by the loader).
+    void setScore(const Score* s, uint8_t* stepState, uint8_t* noteState, uint8_t* stepWrong = nullptr)
     {
-        score_ = s; stepState_ = stepState; noteState_ = noteState;
+        score_ = s; stepState_ = stepState; noteState_ = noteState; stepWrong_ = stepWrong;
         resetPosition(true);
     }
     const Score* score() const { return score_; }
@@ -96,9 +96,8 @@ public:
     void process(const EngineSettings& st, const NoteIn* notes, int numNotes, int frames, double sampleRate)
     {
         numEvents_ = 0;
-        if (!score_ || score_->steps.empty()) return;
+        if (!score_ || score_->steps.empty()) { clock_ += frames / sampleRate; return; }
         settings_ = st;
-        double secs = frames / sampleRate;
         double unitsPerSec = currentBpm() * st.tempoFactor / 60.0 * kUPQ;
         int done = 0;
         for (int i = 0; i <= numNotes; ++i)
@@ -106,13 +105,13 @@ public:
             int until = i < numNotes ? notes[i].offset : frames;
             until = until < done ? done : (until > frames ? frames : until);
             advanceClock((until - done) / sampleRate, unitsPerSec);
+            clock_ += (until - done) / sampleRate;
             done = until;
             if (i < numNotes)
             {
                 if (notes[i].on) noteOn(notes[i].pitch);
             }
         }
-        (void)secs;
         activeSeconds_ += playing() ? frames / sampleRate : 0.0;
     }
 
@@ -121,6 +120,8 @@ public:
     const EngineEvent& event(int i) const { return events_[i]; }
 
     int currentStep() const { return step_; }
+    int lastDoneStep() const { return lastDoneStep_; }
+    double secondsSinceDone() const { return clock_ - lastDoneAt_; }
     double position() const { return pos_; }
     int hits() const { return hits_; }
     int misses() const { return misses_; }
@@ -286,6 +287,7 @@ private:
         {
             int from = settings_.loop ? loopStartStep_ : 0;
             for (size_t s = (size_t)from; s < score_->steps.size(); ++s) if (stepState_) stepState_[s] = 0;
+            for (size_t s = (size_t)from; s < score_->steps.size(); ++s) if (stepWrong_) stepWrong_[s] = 0;
             for (size_t s = (size_t)from; s < score_->steps.size(); ++s)
             {
                 const Step& stp = score_->steps[s];
@@ -300,6 +302,7 @@ private:
         else { step_ = 0; pos_ = 0; }
         holdLeft_ = 0; countInElapsed_ = 0; countInNext_ = 0;
         accompStep_ = step_;
+        lastDoneStep_ = -1; lastDoneAt_ = -1e9;
         winStart_[0] = winStart_[1] = -1;
         if (clearStats) { hits_ = misses_ = wrongs_ = streak_ = 0; timedHits_ = 0; timingSumMs_ = 0; activeSeconds_ = 0; remindCountdown_ = 0; remindersLeft_ = 0; }
         skipUnrequired(false, false);
@@ -416,10 +419,10 @@ private:
         else stepState_[s] = 1;
     }
 
-    void error(EvType t, int32_t a)
+    void error(EvType t, int32_t a, int32_t b = 0)
     {
         streak_ = 0;
-        push(t, a);
+        push(t, a, b);
         // reminders: every Nth note after an error, a few times
         if (settings_.remindEvery > 0) { remindCountdown_ = settings_.remindEvery; remindersLeft_ = settings_.remindMax; }
     }
@@ -431,6 +434,43 @@ private:
             push(EvType::Reminder);
             if (--remindersLeft_ > 0) remindCountdown_ = settings_.remindEvery;
         }
+    }
+
+    // A note already played right in the current step, or in the step just completed (within
+    // kRestrikeSeconds), is a re-strike: a repeated chord, a bounce, a finger landing twice.
+    // It is ignored rather than counted wrong.
+    static constexpr double kRestrikeSeconds = 0.6;
+    bool playedIn(int s, int pitch) const
+    {
+        if (s < 0 || s >= (int)score_->steps.size()) return false;
+        const Step& stp = score_->steps[(size_t)s];
+        for (uint32_t k = 0; k < stp.count; ++k)
+        {
+            uint32_t ni = score_->stepNotes[stp.firstNote + k];
+            if (noteState_[ni] == 1 && pitchMatches(pitch, score_->notes[ni].pitch)) return true;
+        }
+        return false;
+    }
+    bool isRestrike(int pitch) const
+    {
+        if (playedIn(step_, pitch)) return true;
+        return lastDoneStep_ >= 0 && clock_ - lastDoneAt_ <= kRestrikeSeconds && playedIn(lastDoneStep_, pitch);
+    }
+    // The step a wrong note belongs to: the current one in Wait mode, the nearest in time otherwise.
+    int stepForWrong() const
+    {
+        const int n = (int)score_->steps.size();
+        if (n == 0) return -1;
+        int s = step_ < n ? step_ : n - 1;
+        if (settings_.mode != 0 && s > 0 && std::fabs(score_->steps[(size_t)s - 1].time - pos_) < std::fabs(score_->steps[(size_t)s].time - pos_)) --s;
+        return s;
+    }
+    void wrongNote(int pitch)
+    {
+        ++wrongs_;
+        int s = stepForWrong();
+        if (stepWrong_ && s >= 0) stepWrong_[s] = (uint8_t)pitch;
+        error(EvType::Wrong, pitch, s);
     }
 
     void noteOn(int pitch)
@@ -447,7 +487,8 @@ private:
             {
                 if (stepComplete(step_)) completeStep(true);
             }
-            else if (settings_.wrong != 0) { ++wrongs_; error(EvType::Wrong, pitch); }
+            else if (isRestrike(pitch)) {}
+            else if (settings_.wrong != 0) wrongNote(pitch);
             return;
         }
         // Clock modes
@@ -484,9 +525,15 @@ private:
                 return;
             }
         }
+        if (isRestrike(pitch)) return;
+        for (int s = step_ - 1; s >= 0 && s >= step_ - 4; --s)
+        {   // a note of a step passed moments ago, played again inside its window
+            if (score_->steps[(size_t)s].time + winUnits < pos_) break;
+            if (playedIn(s, pitch)) return;
+        }
         if (settings_.wrong != 0)
         {
-            ++wrongs_; error(EvType::Wrong, pitch);
+            wrongNote(pitch);
             if (settings_.wrong == 2 && state_ == RunState::Running) { state_ = RunState::Holding; holdLeft_ = -1; }
         }
     }
@@ -495,6 +542,7 @@ private:
     {
         stepState_[step_] = ok ? 1 : 2;
         push(EvType::StepDone, step_);
+        lastDoneStep_ = step_; lastDoneAt_ = clock_;
         ++step_;
         const int n = (int)score_->steps.size();
         // In clock modes, steps already complete (played early) are passed over.
@@ -639,8 +687,9 @@ private:
         int b = 1 - a;
         int aEnd = winEnd(winStart_[a], half), bEnd = winEnd(winStart_[b], half);
         if (cur >= winStart_[b] && cur < bEnd)
-        {   // reading the later window: refill the earlier one with what follows
-            winStart_[a] = bEnd;
+        {   // reading the later window: refill the earlier one with what follows (at the end of
+            // the piece nothing follows, and the earlier music stays)
+            if (bEnd < (int)score_->slots.size()) winStart_[a] = bEnd;
             return;
         }
         if (cur >= winStart_[a] && cur < aEnd) return;
@@ -673,6 +722,9 @@ private:
     const Score* score_ = nullptr;
     uint8_t* stepState_ = nullptr;     // 0 open, 1 done, 2 missed
     uint8_t* noteState_ = nullptr;     // 0 open, 1 played, 2 missed
+    uint8_t* stepWrong_ = nullptr;     // last wrong pitch played at each step (0: none)
+    double clock_ = 0;                 // seconds of audio processed
+    int lastDoneStep_ = -1; double lastDoneAt_ = -1e9;
     EngineSettings settings_;
     RunState state_ = RunState::Idle;
     int step_ = 0;

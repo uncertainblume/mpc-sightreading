@@ -35,10 +35,20 @@ Value changes reach the screen when the plugin calls `audioMasterAutomate` from 
   staff masks for the hand not practised, barlines between slots, key and time signatures, a
   red/green flash over the staff, digits, note names and status words are more film strips.
   Titles and the file list are text parameters (they change rarely).
-- **853 parameters**: 64 settings, 22 texts, 767 display parameters (660 cells). Display
-  parameters are not automatable and have constant (empty) display text. The MPC stores only the
-  plugin's state chunk in a project, not per-parameter values, so the count does not bloat
-  projects (checked against a saved project from this MPC).
+- **Marks** (0.2.0) are a second grid of 660 film strips over the cells, above the staff lines
+  and the played-note fade: a colour dot in a notehead, the head redrawn green (played) or red
+  (missed), a red "ghost" head with its accidental and ledger lines where a wrong note was played.
+  133 frames of 54 x 60 px. The layout engine records which note every drawn head belongs to
+  (`Score::heads`, tied continuations included), so the audio thread picks a mark per cell from
+  the note's state without searching. Dots are drawn only in columns not yet passed, and marks
+  have a lighter "trail" variant for passed columns, which keeps the strip at 7,980 px.
+- **1,553 parameters**: 91 settings, 22 texts, 1,440 display parameters (660 cells, 660 marks).
+  0.1.0 had 853 and the MPC handled them (and 774 widgets on PLAY) without slowing down; PLAY now
+  has 1,436 widgets. Display parameters are not automatable and have constant (empty) display
+  text. The MPC stores only the plugin's state chunk in a project, not per-parameter values, so
+  the count does not bloat projects (checked against a saved project from this MPC).
+- **Tabs:** every entry in TUI.json shows on the MPC as its own tab button, sub-tabs included
+  (0.1.0's Night/Day sub-tabs doubled all seven), so only PLAY has a Day version (LIGHT).
 
 ### Limits respected (all from device measurements by others)
 
@@ -88,12 +98,18 @@ engine checks the real notes, not the simplified picture.
 `plugin/src/sr/engine.h` runs on the audio thread, without locks or allocation: Wait, Flow and
 Rhythm modes, the slack settings, count-in and metronome, loops with a tempo ramp, reminders, and
 the screen windows (Halves, Page, Bars, Steps). It reports events (wrong, miss, hit, beat, pass
-done...) that the plugin turns into blips, flashes, accompaniment notes and progress records.
+done...) that the plugin turns into sounds, flashes, marks, accompaniment notes and progress
+records. It keeps the last wrong pitch of every step (for the red ghost notes) and ignores
+re-strikes: a note of the current step played again, or of the step just completed within 0.6 s.
+
+The host calls the plugin's `reset()` on every resume (`effMainsChanged`) as well as after a state
+load. 0.1.0 restarted the practice engine there, which on the MPC could send the player back to
+the first note; 0.2.0 only silences sounds and re-sends the screen.
 
 ## Threads
 
 - **Audio thread** (`process`): MIDI in → engine → events → LinnStrument light diffs → display
-  diffs → blips. Calls `audioMasterAutomate` (and rarely `audioMasterUpdateDisplay`) like the
+  diffs → sounds (a small synth: six timbres, an ADSR envelope, eight voices). Calls `audioMasterAutomate` (and rarely `audioMasterUpdateDisplay`) like the
   community wrapper does on devices.
 - **Worker thread:** library scan, file loading and layout, the generator, fingering, progress
   files, finding the LinnStrument, reading the project's key. Hands finished pieces to the audio

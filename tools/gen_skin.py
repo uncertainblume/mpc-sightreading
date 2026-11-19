@@ -168,7 +168,19 @@ class Theme:
         self.line = argb(t["panel_line"])
 
 def control_slot(th, pid, x, y, kind):
-    """kind: knob, menu, switch, button, toggle. Returns entries (absolute positions)."""
+    """kind: knob, menu, switch, button, toggle, or pair (pid = two ids: two half-width buttons).
+    Returns entries (absolute positions)."""
+    if kind == "pair":
+        out = []
+        gap = 8
+        w = (SLOT_W - 20 - gap) // 2
+        for k, p in enumerate(pid):
+            caption = next(c for c in PR.CONTROL if c[0] == p)[1]
+            bx = x + 10 + k * (w + gap)
+            on, off = seg_images(th, w, 56, "button")
+            out.append(label(p + "_cap", "Text", "Invalid", bx, y + 26, w, 56, 20, th.text, "horizontallyCentred verticallyCentred", "SemiBold", "Upper Case", caption))
+            out.append(button(p + "_btn", on, off, P(p), 1, 1, bx, y + 26, w, 56))
+        return out, None
     idx = IDX[pid]
     handle = "Parameter %d" % idx
     defn = next(p for p in PR.CONTROL if p[0] == pid)
@@ -242,7 +254,7 @@ def grid_page(th, layout, top=20, row_h=150, extra=()):
             group.extend(ents)
             if comp is not None:
                 defs["%s_slot_%s" % (kind, th.name)] = comp
-            qmap[13 + c - 4 * r] = IDX[pid]
+            qmap[13 + c - 4 * r] = IDX[pid[0] if isinstance(pid, tuple) else pid]
         groups.append(group)
     kids.extend(extra)
     grid_page.last_rects = fit_rects(groups)
@@ -347,7 +359,7 @@ def play_page(th):
     # footer: two rows of controls
     layout = [
         [("mode", "switch"), ("tempo", "knob"), ("hands", "switch"), ("view", "menu")],
-        [("play", "toggle"), ("restart", "button"), ("loop", "toggle"), ("loop_from", "knob")],
+        [("play", "toggle"), (("listen", "restart"), "pair"), ("loop", "toggle"), ("loop_from", "knob")],
     ]
     fk, defs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118)
     kids.extend(fk)
@@ -416,14 +428,15 @@ def setup_page(th):
 def more_page(th):
     layout = [
         [("range_lo", "knob"), ("range_hi", "knob"), ("out_range", "switch"), ("mask", "switch")],
-        [("names", "switch"), ("accomp", "switch"), ("split", "knob"), ("transpose", "knob")],
-        [("ramp", "menu"), ("goal", "knob"), ("loop_bars", "knob"), None],
+        [("names", "switch"), ("split", "knob"), ("transpose", "knob"), ("loop_bars", "knob")],
+        [("ramp", "menu"), ("goal", "knob"), None, None],
+        [("listen_at", "menu"), ("listen_hands", "switch"), ("accomp", "switch"), ("out_ch", "knob")],
     ]
     kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
-    kids.extend(paragraph("help", "Range: notes outside it are not asked for (Skip) or removed from the score (Hide). Mask hides "
-                          "notes once played, or the bar you are in, so you have to read ahead. Accomp sends the other hand's notes to "
-                          "\"Sight Reader MIDI Out\" for an instrument track. Tempo Ramp raises the tempo after a loop pass at or above "
-                          "Goal. Split (for one-track files) and Transpose reload the piece.", 16, 470, 1248, 16, th.dim))
+    kids.extend(paragraph("help", "Bottom row: what goes out of \"Sight Reader MIDI Out\" (set an instrument track's MIDI input to it). "
+                          "LISTEN on PLAY plays the piece there, at the Tempo knob or a fixed speed; Accomp sends the other hand while "
+                          "you practise. Range Skip: notes outside are not asked for; Hide: removed. Mask hides played notes or your bar.",
+                          16, 568, 1248, 15, th.dim, 20))
     return kids, defs, qmap, grid_page.last_rects
 
 def sound_page(th):

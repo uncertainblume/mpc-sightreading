@@ -171,6 +171,11 @@ public:
     }
 
     // ---- screen ------------------------------------------------------------------------------
+    // While LISTEN plays, the screen follows its position instead of the practice cursor
+    // (-1: back to practice). The practice position itself does not move.
+    void setListenSlot(int slot) { listenSlot_ = slot; }
+    int listenSlot() const { return listenSlot_; }
+
     // Which score slot each screen column shows (-1: blank), with overlay frames.
     void computeScreen(int screenSlot[kScreen], uint8_t overlay[kScreen], int barline[kScreen + 1], int measureNum[2])
     {
@@ -179,7 +184,8 @@ public:
         measureNum[0] = measureNum[1] = -1;
         if (!score_ || score_->slots.empty()) return;
         const Score& sc = *score_;
-        int cur = currentSlot();
+        const bool listening = listenSlot_ >= 0 && listenSlot_ < (int)sc.slots.size();
+        int cur = listening ? listenSlot_ : currentSlot();
         const int view = settings_.view;
         if (view == 0)
         {   // halves: the other half refills while you read this one
@@ -204,6 +210,11 @@ public:
             fillWindow(0, start, kScreen, screenSlot, barline, measureNum[0]);
         }
         // overlays
+        if (listening)
+        {   // just the moving band: nothing has been played
+            for (int i = 0; i < kScreen; ++i) overlay[i] = screenSlot[i] == cur ? 1 : 0;
+            return;
+        }
         int curStepSlot = (step_ >= 0 && step_ < (int)sc.steps.size()) ? sc.steps[(size_t)step_].slot : (int)sc.slots.size();
         int curMeasure = cur >= 0 && cur < (int)sc.slots.size() ? sc.slots[(size_t)cur].measure : -1;
         for (int i = 0; i < kScreen; ++i)
@@ -739,6 +750,7 @@ private:
     int remindCountdown_ = 0, remindersLeft_ = 0;
     int loopStartStep_ = 0, loopEndStep_ = 0; int32_t loopStartUnit_ = 0, loopEndUnit_ = 0;
     mutable int winStart_[2] = {-1, -1};
+    int listenSlot_ = -1;
     EngineEvent events_[kMaxEvents];
     int numEvents_ = 0;
 };

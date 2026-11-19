@@ -42,9 +42,9 @@ Value changes reach the screen when the plugin calls `audioMasterAutomate` from 
   (`Score::heads`, tied continuations included), so the audio thread picks a mark per cell from
   the note's state without searching. Dots are drawn only in columns not yet passed, and marks
   have a lighter "trail" variant for passed columns, which keeps the strip at 7,980 px.
-- **1,553 parameters**: 91 settings, 22 texts, 1,440 display parameters (660 cells, 660 marks).
+- **1,557 parameters**: 95 settings, 22 texts, 1,440 display parameters (660 cells, 660 marks).
   0.1.0 had 853 and the MPC handled them (and 774 widgets on PLAY) without slowing down; PLAY now
-  has 1,436 widgets. Display parameters are not automatable and have constant (empty) display
+  has 1,438 widgets. Display parameters are not automatable and have constant (empty) display
   text. The MPC stores only the plugin's state chunk in a project, not per-parameter values, so
   the count does not bloat projects (checked against a saved project from this MPC).
 - **Tabs:** every entry in TUI.json shows on the MPC as its own tab button, sub-tabs included
@@ -116,6 +116,20 @@ the first note; 0.2.0 only silences sounds and re-sends the screen.
   thread through an atomic pointer; the old piece comes back the same way to be freed.
 - The host's UI thread only reads parameter names and texts (a mutex the audio thread never
   takes).
+
+## LISTEN and the MIDI Out port
+
+The MPC accepts a plugin's VST MIDI output and discards it (SDK `docs/host-contract.md`), so a
+plugin cannot play another track that way. Sight Reader instead opens its own ALSA sequencer
+client with a subscribable output port, "MIDI Out", which the MPC lists as a MIDI input for tracks
+("Sight Reader MIDI Out"). The same route, with the same port flags, was measured on this MPC by
+mpc-mpe's bridge: the MPC noticed the plugin's ports, subscribed to them, and every note arrived.
+
+`plugin/src/sr/listen.h` plays the score's notes (the quantised version on screen) with their
+velocities, following the file's tempo map times Listen At, on the audio thread, sending note-ons
+and note-offs at block boundaries (under 3 ms apart at 128 samples). It ends sounding notes before
+re-striking the same pitch, at the end of the range, and whenever it stops. The engine shows its
+position on screen (`setListenSlot`) without touching the practice position.
 
 ## Files on the MPC
 

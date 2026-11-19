@@ -12,11 +12,12 @@ Carlos, the pioneer without whom none of this would be possible.*
 
 ![The PLAY page in the Night theme, Für Elise](docs/img/play-night.png)
 
-**Status: version 0.2.0.** 0.1.0 was tried on an MPC Live III: the pages, the staff, the notes and
-the cursor drew correctly and the MPC stayed responsive. 0.2.0 answers that first test: played
+**Status: version 0.3.0.** 0.1.0 was tried on an MPC Live III: the pages, the staff, the notes and
+the cursor drew correctly and the MPC stayed responsive. 0.2.0 answered that first test: played
 notes turn green and wrong ones show in red, your LinnStrument colour scheme as a dot in every
 note, a gentler error sound you can shape (SOUND page), one-hand scale drills, and fixes for what
-made playing seem stuck (see [docs/handoff.md](docs/handoff.md)). It passes the SDK's validator
+made playing seem stuck (see [docs/handoff.md](docs/handoff.md)). 0.3.0 adds **LISTEN**: the
+piece played in time, at any speed, to an instrument of your choice. It passes the SDK's validator
 (0 errors, 0 warnings), its host simulator, and an end-to-end test that plays pieces through the
 plugin's VST interface and checks the screen.
 
@@ -29,6 +30,7 @@ plugin's VST interface and checks the screen.
 | **Modes** | *Wait*: holds on every note until you play it. *Rhythm*: a clock runs at the tempo you set and grades timing. *Flow*: the clock runs but waits up to *Hold* beats for a missed note before moving on. |
 | **Slack** | Timing window (40-400 ms), pitch tolerance (exact, any octave, a semitone either way), chord tolerance (all notes, all but one, any one), how long Flow waits, whether wrong notes are ignored, counted or stop the clock. |
 | **Focus** | Right hand, left hand or both; a note range (outside it notes are not asked for, or removed from the score); loop any span of bars, with an optional tempo ramp after each pass at or above your goal; masks that hide notes once played, or hide the bar you are in so you have to read ahead. |
+| **Listen** | LISTEN (on PLAY) plays the piece, or the loop, in time as MIDI through the port "Sight Reader MIDI Out", so any instrument track (a plugin, a keygroup, a drum program) set to that input plays it as an example. Speed: the Tempo knob, or a fixed 25-150 %. The cursor follows the music, and in Linn Mode the LinnStrument lights the notes as they sound. Your practice position stays where it was. |
 | **Feedback** | A band marks the current note; notes you play turn green, missed notes red, and a wrong note appears as a red note where you played it (with its accidental). Played notes fade. A red flash can cover the staff on a mistake. The header shows the next note of each hand and the note you played, and says what is wrong when you seem stuck (the other hand's note still wanted, or an instrument an octave off). A quiet error sound (six timbres, volume, pitch and an ADSR envelope) sounds on a mistake and again softer on every Nth note afterwards (default every 10th, three times) so you notice during a fast run. Accuracy, misses, bar and tempo are on screen. |
 | **Note colours** | A dot of each note's colour in every notehead still to be played, set per note on the COLOR page. The default is a LinnStrument scheme: C cyan, D blue, E pink, F magenta, G white, A yellow, B orange, and the hue halfway between for each black key. |
 | **Material** | 224 built-in drills (scales and arpeggios for each hand, modes, intervals, rhythm levels 1-5, ledger lines, hands-together scales and coordination, LinnStrument shapes), an exercise generator (any key and mode, rhythm and leap difficulty 1-5, left-hand styles), and a library you fill from the [Mutopia Project](https://www.mutopiaproject.org) or with your own files over SSH. |
@@ -38,20 +40,22 @@ plugin's VST interface and checks the screen.
 
 It makes no sound of its own except the error sound and an optional metronome: keep your
 instrument (SurgeXXL, a stock MPC instrument...) on its own track listening to the same input.
+LISTEN and Accomp send MIDI to an instrument track instead (the MPC drops a plugin's own MIDI
+output, so they go through an ALSA port the plugin opens, which the MPC lists as a MIDI input).
 
 ## Install
 
 You need MPC OS 3.10.1 or later with **Preferences → Enhancements (Beta) → Enable Enhancements**
 and **External Plugin Support** switched on.
 
-1. Take [dist/sight-reader-0.2.0-mpc.zip](dist/sight-reader-0.2.0-mpc.zip) (built from this commit) and unzip it,
+1. Take [dist/sight-reader-0.3.0-mpc.zip](dist/sight-reader-0.3.0-mpc.zip) (built from this commit) and unzip it,
    or build it yourself (below).
 2. Copy the folder `Practice Tools - VST - Sight Reader` into `VST2 Plugins` at the top of the
    MPC's **internal** drive (`/nvme` on a Live III; removable drives are mounted `noexec`), or
    over the network with the SDK (it asks before restarting the MPC app; save your project first):
 
    ```bash
-   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.2.0-mpc.zip
+   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.3.0-mpc.zip
    ```
 3. Restart the MPC app. Sight Reader is under **External Plugins**.
 
@@ -67,8 +71,14 @@ and **External Plugin Support** switched on.
    a count-in. With **Hands = Both**, a piece written for two hands waits for both: set Hands to
    Right or Left to practise one.
 
-Do not set Sight Reader's track input to *All Ports* if you use **Accomp** (its own notes would
-come back as wrong notes; the plugin filters echoes, but don't rely on it).
+To hear the piece with **LISTEN**: give an instrument track (any plugin or program) the MIDI
+input **Sight Reader MIDI Out**, channel All (or Out Ch, MORE page), monitor **In**; then press
+LISTEN on PLAY. To hear it on the instrument you play, give that instrument a second track with
+this input (or set its input to *All Ports*). If the port is not in the list: Preferences → MIDI /
+Sync → Input Ports, turn **Track** on for it.
+
+Do not set Sight Reader's own track input to *All Ports* (its LISTEN and Accomp notes would come
+back to it; the plugin ignores them while LISTEN plays and filters echoes, but don't rely on it).
 
 ## Fill the library over SSH
 

@@ -189,7 +189,7 @@ BARLINE_FRAMES = ["none", "single", "double", "final", "repeat_start", "repeat_e
 KEYSIG_FRAMES = list(range(-7, 8))              # sharps positive
 TIMESIG_FRAMES = ["4/4", "3/4", "2/4", "2/2", "C", "C|", "3/8", "6/8", "9/8", "12/8", "5/4", "6/4", "7/8", "5/8", "?"]
 DIGIT_FRAMES = [" ", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]   # frame 0 = blank
-STATUS_FRAMES = ["", "WAIT", "FLOW", "RHYTHM", "PAUSED", "COUNT-IN", "DONE", "LOADING", "NO FILE", "LOOP"]
+STATUS_FRAMES = ["", "WAIT", "FLOW", "RHYTHM", "PAUSED", "COUNT-IN", "DONE", "LOADING", "NO FILE", "LOOP", "LISTEN"]
 HAND_FRAMES = ["BOTH", "RIGHT", "LEFT"]
 NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
 # Note name strip: frame 0 blank, then MIDI 21 (A0) .. 108 (C8) spelled with sharps,

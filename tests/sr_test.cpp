@@ -13,7 +13,9 @@
 #include "sr/inflate.h"
 #include "sr/files.h"
 #include "sr/linn.h"
+#include "sr/listen.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -224,6 +226,45 @@ static int selftest()
         for (int i = 0; i < 20; ++i) eng.process(st, in, 0, 128, 44100);
         in[0] = {0, 72, true}; eng.process(st, in, 1, 128, 44100);
         CHECK(eng.wrongs() == 0 && eng.hits() == 2);
+    }
+    // --- LISTEN: every note, in time, each one ended ----------------------------------------------
+    {
+        struct Ev { double t; int st, pitch; };
+        auto run = [&](double factor, int hands, int32_t from, int32_t to, bool loop, double seconds, std::vector<Ev>& out) {
+            ListenPlayer lp; lp.start(&sc, from, to, loop, hands);
+            double t = 0;
+            while (t < seconds && lp.playing())
+            {
+                lp.process(128, 44100, factor, [&](int st, int pitch, int) { out.push_back({t, st, pitch}); });
+                t += 128.0 / 44100;
+            }
+            bool was = lp.playing();
+            if (was) lp.stop([&](int st, int pitch, int) { out.push_back({t, st, pitch}); });
+            return was;
+        };
+        std::vector<Ev> ev;
+        run(1.0, 3, 0, sc.endUnit, false, 30, ev);
+        int ons = 0, offs = 0; int sounding[128] = {0}; bool hung = false;
+        for (const Ev& e : ev) { if (e.st == 0x90) { ++ons; ++sounding[e.pitch]; } else { ++offs; --sounding[e.pitch]; } }
+        for (int i = 0; i < 128; ++i) hung |= sounding[i] != 0;
+        CHECK(ons == 11 && offs == 11 && !hung);
+        // at 90 bpm the G (beat 4, pitch 79) starts 4 * 0.6667 s in, to within a block
+        double tG = -1; for (const Ev& e : ev) if (e.st == 0x90 && e.pitch == 79) { tG = e.t; break; }
+        CHECK(std::fabs(tG - 4 * 60.0 / 90.0) < 0.004);
+        // twice as fast: half the time
+        std::vector<Ev> fast; run(2.0, 3, 0, sc.endUnit, false, 30, fast);
+        double tG2 = -1; for (const Ev& e : fast) if (e.st == 0x90 && e.pitch == 79) { tG2 = e.t; break; }
+        CHECK(std::fabs(tG2 - 2 * 60.0 / 90.0) < 0.004);
+        // right hand only
+        std::vector<Ev> rhOnly; run(1.0, 1, 0, sc.endUnit, false, 30, rhOnly);
+        int rhOns = 0; for (const Ev& e : rhOnly) rhOns += e.st == 0x90;
+        CHECK(rhOns == 8);
+        // a loop over the first bar plays it again and again until stopped
+        std::vector<Ev> lp; bool still = run(1.0, 3, 0, sc.measures[1].start, true, 6, lp);
+        int c5 = 0; for (const Ev& e : lp) c5 += e.st == 0x90 && e.pitch == 72;
+        CHECK(still && c5 >= 2);
+        int lpOn = 0, lpOff = 0; for (const Ev& e : lp) { lpOn += e.st == 0x90; lpOff += e.st == 0x80; }
+        CHECK(lpOn == lpOff);
     }
     // --- engine: rhythm mode -----------------------------------------------------------------
     {

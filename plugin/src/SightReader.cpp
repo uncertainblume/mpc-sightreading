@@ -7,7 +7,9 @@
 //   clock and grades timing; Flow mode runs the clock but waits a while for missed notes.
 //   It makes no sound of its own except a short, quiet sound on mistakes (six timbres with
 //   an ADSR envelope, on the SOUND page) and a metronome if you want one: put your instrument
-//   on another track listening to the same input.
+//   on another track listening to the same input. LISTEN plays the piece in time as MIDI
+//   through the plugin's own "MIDI Out" port, for any instrument track set to listen to it
+//   (the MPC discards a plugin's VST MIDI output, so this is an ALSA sequencer port).
 //
 // How the screen works
 //   The MPC draws plugin pages from JSON skins; a plugin cannot paint. The staff is a grid of
@@ -33,6 +35,7 @@
 #include "sr/files.h"
 #include "sr/generator.h"
 #include "sr/linn.h"
+#include "sr/listen.h"
 #include "sr/music.h"
 #include "sr/score.h"
 #include "sr/smf.h"
@@ -51,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 200;   // 0.2.0
+constexpr int kVersion = 300;   // 0.3.0
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -305,6 +308,7 @@ public:
     {
         accompAllOff();
         synth_.allOff();
+        listenStopReq_.store(true);
         forceFullPush_ = true; forceCursor_ = gen::kDisplayBase;
     }
 
@@ -423,6 +427,7 @@ public:
                 incoming_.store(nullptr, std::memory_order_release);
                 accompAllOff();
                 guideAllOff();
+                if (listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
                 Loaded* old = current_;
                 current_ = in;
                 engine_.setScore(&current_->score, current_->stepState.data(), current_->noteState.data(), current_->stepWrong.data());
@@ -437,7 +442,18 @@ public:
         }
         // 2. settings and triggers
         readSettings();
-        if (trig_restart_.exchange(false)) { engine_.restart(); accompAllOff(); resetParam(gen::P_RESTART); setParamFromEngine(gen::P_PLAY, 0.0f); }
+        if (trig_restart_.exchange(false))
+        {
+            if (listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
+            engine_.restart(); accompAllOff(); resetParam(gen::P_RESTART); setParamFromEngine(gen::P_PLAY, 0.0f);
+        }
+        if (listenStopReq_.exchange(false) && listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
+        {
+            bool wantListen = current_ != nullptr && getBool(gen::P_LISTEN);
+            if (wantListen && !listening_) startListen();
+            else if (!wantListen && listening_) stopListen();
+            if (!current_ && getBool(gen::P_LISTEN)) setParamFromEngine(gen::P_LISTEN, 0.0f);
+        }
         if (trig_sndtest_.exchange(false)) { errorSound(0, 1.0f); resetParam(gen::P_SND_TEST); }
         if (trig_colreset_.exchange(false))
         {
@@ -451,6 +467,7 @@ public:
             if (!ctx.transport.playing && lastTransportPlaying_) { wantPlay = false; setParamFromEngine(gen::P_PLAY, 0.0f); }
         }
         lastTransportPlaying_ = ctx.transport.valid && ctx.transport.playing;
+        if (wantPlay && listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }   // PLAY takes over
         if (wantPlay != lastPlayParam_)
         {
             engine_.setPlaying(wantPlay, settings_);
@@ -470,8 +487,8 @@ public:
             }
             else if (e.isAllNotesOff()) accompAllOff();
         }
-        // 4. engine
-        engine_.process(settings_, notes, nn, n, sr_);
+        // 4. engine (what you play while LISTEN plays is not graded)
+        engine_.process(settings_, notes, listening_ ? 0 : nn, n, sr_);
         double bpmNow = engine_.effectiveBpm(settings_);
         for (int i = 0; i < engine_.numEvents(); ++i) handleEvent(engine_.event(i), bpmNow);
         // keep the Play button in step with the engine (a first note starts it, the end stops it)
@@ -482,6 +499,7 @@ public:
             lastPlayParam_ = engPlaying;
         }
         accompOffsDue();
+        listenBlock(n);
         // 5. LinnStrument
         lightsBlock();
         // 6. screen
@@ -682,7 +700,7 @@ private:
     }
 
     // ---- accompaniment (other hand) through "MIDI Out" ---------------------------------------------
-    struct Sounding { int8_t pitch = -1; int32_t endUnit = 0; };
+    struct Sounding { int8_t pitch = -1; uint8_t ch = 0; int32_t endUnit = 0; };
     Sounding sounding_[32];
     struct Sent { int pitch; uint64_t block; };
     Sent recentSent_[32]; int recentIdx_ = 0;
@@ -691,10 +709,11 @@ private:
     {
         if (!alsa_.isOpen() || !current_) return;
         const PlayNote& pn = current_->score.notes[(size_t)noteIndex];
-        uint8_t m[3] = {0x90, (uint8_t)pitch, pn.vel ? pn.vel : (uint8_t)80};
+        uint8_t ch = outChannel();
+        uint8_t m[3] = {(uint8_t)(0x90 | ch), (uint8_t)pitch, pn.vel ? pn.vel : (uint8_t)80};
         if (alsa_.sendMidi(m))
         {
-            for (Sounding& s : sounding_) if (s.pitch < 0) { s.pitch = (int8_t)pitch; s.endUnit = pn.end; break; }
+            for (Sounding& s : sounding_) if (s.pitch < 0) { s.pitch = (int8_t)pitch; s.ch = ch; s.endUnit = pn.end; break; }
             recentSent_[recentIdx_] = {pitch, blockCounter_}; recentIdx_ = (recentIdx_ + 1) % 32;
         }
     }
@@ -703,12 +722,73 @@ private:
         double pos = engine_.position();
         for (Sounding& s : sounding_)
             if (s.pitch >= 0 && (pos >= s.endUnit || (settings_.mode == 0 && pos + 0.5 >= s.endUnit)))
-            { uint8_t m[3] = {0x80, (uint8_t)s.pitch, 0}; alsa_.sendMidi(m); s.pitch = -1; }
+            { uint8_t m[3] = {(uint8_t)(0x80 | s.ch), (uint8_t)s.pitch, 0}; alsa_.sendMidi(m); s.pitch = -1; }
     }
     void accompAllOff()
     {
-        for (Sounding& s : sounding_) if (s.pitch >= 0) { uint8_t m[3] = {0x80, (uint8_t)s.pitch, 0}; alsa_.sendMidi(m); s.pitch = -1; }
+        for (Sounding& s : sounding_) if (s.pitch >= 0) { uint8_t m[3] = {(uint8_t)(0x80 | s.ch), (uint8_t)s.pitch, 0}; alsa_.sendMidi(m); s.pitch = -1; }
     }
+    uint8_t outChannel() const { return (uint8_t)std::max(0, std::min(15, (int)get(gen::P_OUT_CH) - 1)); }
+
+    // ---- LISTEN: the piece in time through "MIDI Out", the cursor following ----------------------
+    // From the loop's start (round and round while Loop is on), else from the start of the bar the
+    // practice cursor is in (the start of the piece once it is done). The practice position stays
+    // where it was; PLAY, RESTART, a new piece or LISTEN again stop it.
+    double listenFactor() const
+    {
+        static const double fixed[7] = {0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5};
+        int i = std::max(0, std::min(6, (int)get(gen::P_LISTEN_AT)));
+        return i == 0 ? settings_.tempoFactor : fixed[i];
+    }
+    void loopUnits(const Score& sc, int32_t& from, int32_t& to) const
+    {
+        int m0 = std::max(0, settings_.loopFrom - (sc.measures.empty() ? 1 : sc.measures[0].number));
+        m0 = std::min(m0, (int)sc.measures.size() - 1);
+        int m1 = std::min((int)sc.measures.size(), m0 + settings_.loopBars);
+        from = sc.measures[(size_t)m0].start;
+        to = m1 < (int)sc.measures.size() ? sc.measures[(size_t)m1].start : sc.endUnit;
+    }
+    void startListen()
+    {
+        const Score& sc = current_->score;
+        int32_t from = 0, to = sc.endUnit;
+        if (settings_.loop) loopUnits(sc, from, to);
+        else if (engine_.state() != RunState::Done && !sc.measures.empty())
+            from = sc.measures[(size_t)std::max(0, std::min((int)sc.measures.size() - 1, engine_.currentMeasure()))].start;
+        int hands = 3;
+        if ((int)get(gen::P_LISTEN_HANDS) == 1) hands = settings_.hands == 1 ? 1 : (settings_.hands == 2 ? 2 : 3);
+        if (engine_.playing()) { engine_.setPlaying(false, settings_); setParamFromEngine(gen::P_PLAY, 0.0f); }
+        accompAllOff();
+        listenCh_ = outChannel();
+        listening_ = listen_.start(&sc, from, to, settings_.loop, hands);
+        if (!listening_) { setParamFromEngine(gen::P_LISTEN, 0.0f); return; }
+        engine_.setListenSlot(sc.slotAtTime(from));
+        lightsDirty_ = true;
+        int pct = (int)std::lround(listenFactor() * 100.0);
+        hintCode_.store(4 | (std::min(255, pct) << 8) | ((listenCh_ + 1) << 16));
+        wake();
+    }
+    void stopListen()
+    {
+        listen_.stop([this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
+        listening_ = false;
+        engine_.setListenSlot(-1);
+        lightsDirty_ = true;
+    }
+    void listenSend(int st, int pitch, int vel)
+    {
+        uint8_t m[3] = {(uint8_t)(st | listenCh_), (uint8_t)pitch, (uint8_t)vel};
+        alsa_.sendMidi(m);
+        if (st == 0x90) { recentSent_[recentIdx_] = {pitch, blockCounter_}; recentIdx_ = (recentIdx_ + 1) % 32; }
+    }
+    void listenBlock(int frames)
+    {
+        if (!listening_ || !current_) return;
+        bool more = listen_.process(frames, sr_, listenFactor(), [this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
+        if (!more) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); return; }
+        engine_.setListenSlot(current_->score.slotAtTime(listen_.position()));
+    }
+
     bool isEcho(int pitch) const
     {   // our own accompaniment can come back if a track routes MIDI Out into this one
         for (const Sent& s : recentSent_) if (s.pitch == pitch && blockCounter_ - s.block < 40) return true;
@@ -814,7 +894,19 @@ private:
         int want[16]; int wantCount = 0;
         uint8_t wantColour[16];
         int8_t wantCol[16], wantRow[16];
-        if (guideMode > 0 && current_ && engine_.state() != RunState::Done)
+        if (guideMode > 0 && current_ && listening_)
+        {   // LISTEN: light the notes as they sound
+            listen_.forEachSounding([&](const PlayNote& pn, int32_t ni) {
+                if (wantCount >= 16) return;
+                want[wantCount] = pn.pitch;
+                wantCol[wantCount] = (size_t)ni < current_->fing.col.size() ? current_->fing.col[(size_t)ni] : -1;
+                wantRow[wantCount] = (size_t)ni < current_->fing.row.size() ? current_->fing.row[(size_t)ni] : -1;
+                int f = (size_t)ni < current_->fing.finger.size() ? current_->fing.finger[(size_t)ni] : 0;
+                wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f] : (gcol == 0 ? 0 : kLinnColourChoice[gcol - 1]);
+                ++wantCount;
+            });
+        }
+        else if (guideMode > 0 && current_ && engine_.state() != RunState::Done)
         {
             int s = engine_.nextRequiredStep(std::max(0, engine_.currentStep()));
             for (int pass = 0; pass < (guideMode == 2 ? 2 : 1) && s >= 0; ++pass)
@@ -909,8 +1001,10 @@ private:
         for (int i = 0; i <= gen::kSlots; ++i) setFrame(gen::kD_barline + i, bar[i], gen::kBarlineFrames);
         setFrame(gen::kD_keysig, sc ? sc->keySf + 7 : 7, gen::kKeySigFrames);
         setFrame(gen::kD_timesig, sc ? sc->timeSigFrame() : 0, gen::kTimeSigFrames);
-        setFrame(gen::kD_mask + 0, settings_.hands == 2 ? 1 : 0, gen::kStaffMaskFrames);
-        setFrame(gen::kD_mask + 1, settings_.hands == 1 ? 1 : 0, gen::kStaffMaskFrames);
+        // the hand not practised is dimmed (not while LISTEN plays both hands)
+        const bool listenBoth = listening_ && (int)get(gen::P_LISTEN_HANDS) == 0;
+        setFrame(gen::kD_mask + 0, settings_.hands == 2 && !listenBoth ? 1 : 0, gen::kStaffMaskFrames);
+        setFrame(gen::kD_mask + 1, settings_.hands == 1 && !listenBoth ? 1 : 0, gen::kStaffMaskFrames);
         setFrame(gen::kD_flash, flashFrame_, gen::kFlashFrames);
         // status
         int status = 8;   // NO FILE
@@ -925,10 +1019,13 @@ private:
                 default: status = 1 + settings_.mode; break;
             }
             if (settings_.loop && engine_.state() != RunState::CountIn && engine_.state() != RunState::Paused) status = 9;
+            if (listening_) status = 10;
         }
         setFrame(gen::kD_status, status, gen::kStatusFrames);
         setFrame(gen::kD_handicon, settings_.hands, gen::kHandFrames);
-        int curMeasure = sc ? sc->measures[(size_t)engine_.currentMeasure()].number : -1;
+        int curMeasureIdx = engine_.currentMeasure();
+        if (sc && listening_ && engine_.listenSlot() >= 0) curMeasureIdx = sc->slots[(size_t)engine_.listenSlot()].measure;
+        int curMeasure = sc ? sc->measures[(size_t)curMeasureIdx].number : -1;
         setDigits(gen::kD_d_bar, 3, sc ? std::max(0, curMeasure) : -1);
         setDigits(gen::kD_d_bars, 3, sc ? (int)sc->measures.back().number : -1);
         int hitsTotal = engine_.hits() + engine_.misses() + engine_.wrongs();
@@ -944,7 +1041,14 @@ private:
         int names = (int)get(gen::P_NAMES);
         int nextR = -1, nextL = -1, f0 = 0, f1 = 0;
         bool flats = sc && sc->keySf < 0;
-        if (sc && names > 0)
+        if (sc && names > 0 && listening_)
+        {   // LISTEN: the notes sounding now
+            listen_.forEachSounding([&](const PlayNote& pn, int32_t) {
+                if (pn.hand == 0) { if (nextR < 0 || pn.pitch > nextR) nextR = pn.pitch; }
+                else if (nextL < 0 || pn.pitch < nextL) nextL = pn.pitch;
+            });
+        }
+        else if (sc && names > 0)
         {
             int s = engine_.nextRequiredStep(std::max(0, engine_.currentStep()));
             engine_.forEachRequired(s, [&](const PlayNote& pn, uint8_t st) {
@@ -976,6 +1080,7 @@ private:
         double prog = 0;
         if (sc && !sc->steps.empty()) prog = std::max(0.0, std::min(1.0, engine_.position() / std::max(1, sc->endUnit)));
         if (sc && settings_.mode == 0 && !sc->steps.empty()) prog = (double)engine_.currentStep() / sc->steps.size();
+        if (sc && listening_) prog = std::max(0.0, std::min(1.0, listen_.position() / std::max(1, sc->endUnit)));
         setD(gen::kD_progress, (float)prog);
         // LinnStrument status
         int ls = !getBool(gen::P_LINN) ? 3 : (alsa_.linnConnected() ? 2 : 1);
@@ -1002,8 +1107,9 @@ private:
         const int feedback = (int)get(gen::P_FEEDBACK);
         int colourOf[12];
         for (int i = 0; i < 12; ++i) colourOf[i] = std::max(0, std::min(gen::kDotColours, (int)get(gen::P_COL_C + i)));
-        // the hand not practised is dimmed: no marks on its staff
-        const int dimStaff = settings_.hands == 1 ? 1 : (settings_.hands == 2 ? 0 : -1);
+        // the hand not practised is dimmed: no marks on its staff (LISTEN with both hands: none dimmed)
+        const bool listenBoth = listening_ && (int)get(gen::P_LISTEN_HANDS) == 0;
+        const int dimStaff = listenBoth ? -1 : (settings_.hands == 1 ? 1 : (settings_.hands == 2 ? 0 : -1));
         // the step just completed keeps its bright marks for a moment, so a note is seen turning green
         int freshSlot = -1;
         if (sc && engine_.lastDoneStep() >= 0 && engine_.lastDoneStep() < (int)sc->steps.size() && engine_.secondsSinceDone() < 0.6)
@@ -1021,7 +1127,7 @@ private:
                 {
                     const HeadRef& hr = sc->heads[sl.headFirst + h];
                     if (hr.staff == dimStaff || hr.note < 0) continue;
-                    uint8_t st = current_->noteState[(size_t)hr.note];
+                    uint8_t st = listening_ ? 0 : current_->noteState[(size_t)hr.note];   // LISTEN: colour dots only
                     int fr = 0;
                     if (feedback >= 1 && st == 1) fr = gen::kMarkTintBase + ((trail * 2 + hr.place) * 3 + hr.head) * 2 + 0;
                     else if (feedback == 2 && st == 2) fr = gen::kMarkTintBase + ((trail * 2 + hr.place) * 3 + hr.head) * 2 + 1;
@@ -1032,7 +1138,7 @@ private:
                     }
                     mk[hr.row] = (uint8_t)fr;
                 }
-                if (feedback == 2 && sl.step >= 0 && current_->stepWrong[(size_t)sl.step])
+                if (feedback == 2 && !listening_ && sl.step >= 0 && current_->stepWrong[(size_t)sl.step])
                     ghost(*sc, sl, current_->stepWrong[(size_t)sl.step], trail, dimStaff, mk);
             }
             for (int r = 0; r < gen::kRows; ++r) setFrame(gen::kD_mark + s * gen::kRows + r, mk[r], gen::kMarkFrames);
@@ -1162,6 +1268,8 @@ private:
                     setText(gen::T_MESSAGE, "Waiting for the left hand (" + noteName(expected) + "). Hands = Right: RH only");
                 else if (kind == 3)
                     setText(gen::T_MESSAGE, "Waiting for the right hand (" + noteName(expected) + "). Hands = Left: LH only");
+                else if (kind == 4)   // LISTEN started: speed and channel
+                    setText(gen::T_MESSAGE, "Listening at " + std::to_string(expected) + "% (Sight Reader MIDI Out, ch " + std::to_string(played) + ")");
             }
             PassRecord pr;
             bool anyPass = false;
@@ -1463,6 +1571,10 @@ private:
     int flashFrame_ = 0, flashBlocks_ = 0;
     int lastPlayed_ = -1;
     int hintRun_ = 0, hintKind_ = 0;
+    ListenPlayer listen_;
+    bool listening_ = false;
+    int listenCh_ = 0;
+    std::atomic<bool> listenStopReq_{false};
     std::atomic<int> hintCode_{0};                 // audio -> worker: kind | expected << 8 | played << 16
     uint64_t blockCounter_ = 0, lastUpdateDisplayBlock_ = 0;
     bool lastPlayParam_ = false, lastTransportPlaying_ = false;

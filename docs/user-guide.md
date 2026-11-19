@@ -33,8 +33,30 @@ change only practice settings.
   Hands to Right to practise the right hand alone), or "You play C5, the music says C4" when your
   instrument sounds an octave away from the music (Pitch Tol = Octave accepts any octave, or
   transpose the instrument).
-- **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; Play, Restart, Loop and
-  Loop From.
+- **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; Play, Listen, Restart,
+  Loop and Loop From.
+
+### Listen
+
+**LISTEN** plays the piece in time, as an example of how it goes: from the start of the bar you
+are in (from the beginning once the piece is done), or the loop round and round while Loop is on.
+The notes go out as MIDI through the port **Sight Reader MIDI Out**, so whichever instrument track
+listens to that port plays them: a plugin, a keygroup program, anything. While it plays, the
+cursor follows the music (status LISTEN), the header shows the notes sounding, colour dots stay
+on, and in Linn Mode the LinnStrument lights each note as it sounds (with Guide on). Nothing you
+play is graded meanwhile and your practice position stays where it was. It stops at the end, or
+when you press LISTEN again, PLAY or RESTART.
+
+Setting it up once: on the instrument track you want to hear it on, MIDI input **Sight Reader
+MIDI Out**, channel All (or the channel set in Out Ch), monitor **In**. To hear it on the same
+sound you play with, either duplicate your instrument's track and give the copy this input, or set
+your instrument track's input to *All Ports*. If the port is missing from the list: Preferences →
+MIDI / Sync → Input Ports, turn **Track** on for "Sight Reader MIDI Out". Keep Sight Reader's own
+track on your controller, never *All Ports*.
+
+Speed (MORE page, **Listen At**): *Tempo* follows the Tempo knob (turn it while it plays), or a
+fixed 25, 50, 75, 100, 125 or 150 % of the file's tempo. **Listen Hands**: Both, or only the
+hands you practise (the Hands setting).
 
 ### Modes
 
@@ -116,7 +138,9 @@ bar you are in so you must read ahead), **Note Names** (header shows the next no
 played), **Accomp** (sends the other hand's notes, or all notes not required, to the port
 "Sight Reader MIDI Out" so an instrument track can play them; route a track's input to that
 port), **Split**, **Transpose** (reloads the piece), **Tempo Ramp** (+2/5/10 % after each loop
-pass at or above **Goal**), **Loop Bars**.
+pass at or above **Goal**), **Loop Bars**. The bottom row is everything that goes out of "Sight
+Reader MIDI Out": **Listen At**, **Listen Hands**, **Accomp**, and **Out Ch**, the MIDI channel
+they use (1 by default; for an MPE synth pick a channel it plays notes on, such as 2).
 
 ## SOUND
 

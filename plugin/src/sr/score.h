@@ -108,6 +108,22 @@ struct Score
         }
         return sec + (double)(unit - last) / kUPQ * us * 1e-6;
     }
+    // Tempo in quarter notes per minute at a score time (the file's tempo map).
+    double bpmAt(double unit) const
+    {
+        if (tempo.empty()) return 100.0;
+        double us = tempo[0].usPerQuarter;
+        for (const TempoPoint& t : tempo) { if (t.unit > unit) break; us = t.usPerQuarter; }
+        return 60000000.0 / us;
+    }
+    // The last slot whose time has been reached (0 before the first).
+    int slotAtTime(double unit) const
+    {
+        int lo = 0, hi = (int)slots.size() - 1;
+        if (hi < 0) return -1;
+        while (lo < hi) { int mid = (lo + hi + 1) / 2; if (slots[(size_t)mid].time <= unit) lo = mid; else hi = mid - 1; }
+        return lo;
+    }
     int measureAt(int32_t unit) const
     {
         int lo = 0, hi = (int)measures.size() - 1;

@@ -23,6 +23,10 @@ Fingered (only the suggested cell, in the finger's colour). **Guide Clr**:
 **Linn Ch** is the channel for the Note On highlights: your split's main channel (1 for the left
 split in MPE mode with the factory settings).
 
+While **LISTEN** plays (PLAY page), the guide lights each note as it sounds instead of the next
+one to play, in the same colour (or by finger with Fingering on): watch the shape of a passage
+on the surface while you hear it.
+
 ## Fingering
 
 **Fingering = Colours** picks a cell and a finger for every note, per hand, and colours the next

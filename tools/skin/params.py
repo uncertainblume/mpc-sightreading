@@ -102,6 +102,11 @@ CONTROL = [
     ("click_type", "Click",       "choice", (G.CLICK_TYPES, 0), ""),
     ("click_vol",  "Click Vol",   "int",    (0, 100, 40), "%"),
     ("snd_test",   "Test",        "trigger",(0, 1, 0), ""),
+    # LISTEN (0.3.0): the piece played in time through "Sight Reader MIDI Out"
+    ("listen",     "Listen",      "bool",   (0, 1, 0), ""),
+    ("listen_at",  "Listen At",   "choice", (["Tempo", "25%", "50%", "75%", "100%", "125%", "150%"], 0), ""),
+    ("listen_hands","Listen Hands","choice", (["Both", "Practised"], 0), ""),
+    ("out_ch",     "Out Ch",      "int",    (1, 16, 1), ""),
 ]
 
 TEXTS = ["title", "folder_name", "row0", "row1", "row2", "row3", "row4", "row5", "row6", "row7",

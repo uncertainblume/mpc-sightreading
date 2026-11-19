@@ -3,7 +3,7 @@
 Written 2026-11-19 for the next working session (any model) and for the next test on the MPC.
 Read the README, then this; [design.md](design.md) has the reasoning and sources.
 
-## Status (0.2.0)
+## Status (0.3.0)
 
 **What the first test on the MPC (0.1.0, Live III) showed**
 
@@ -37,6 +37,19 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 - Only PLAY has a Day version now (tab LIGHT); the settings pages are dark only. 10 tabs instead
   of 14 (9 pages + LIGHT).
 
+**0.3.0: LISTEN.** Asked for after 0.2.0: a MIDI out that plays the piece in time, at any speed,
+to any plugin, as an example. The MPC discards a plugin's VST MIDI output, so LISTEN plays through
+the plugin's own ALSA port "MIDI Out" (already there for Accomp; the same port type mpc-mpe's
+bridge used on this MPC, where every note arrived). An instrument track with MIDI input "Sight
+Reader MIDI Out" plays it. From the start of the current bar, or the loop round and round; speed
+from the Tempo knob or fixed (Listen At, MORE); Both hands or the practised ones (Listen Hands);
+channel Out Ch (also used by Accomp now). The cursor follows, the LinnStrument guide lights the
+sounding notes, input is not graded, the practice position stays. Tested: the player's timing,
+note-offs, hands and loop in unit tests; through VST2, a 16-bar piece at 200 % lasts 19.2 s with
+the cursor and halves following and stops by itself, notes played meanwhile are not graded, PLAY
+stops it, and with Loop on it repeats. **Not tested: the MIDI actually reaching a track on the
+MPC** (no ALSA here).
+
 **Tested on a computer** (`tools/run_tests.sh`): unit tests under ASan/UBSan (now also: every
 drawn head maps to its note, re-strikes, wrong-note memory); the built plugin through VST2
 (LOAD, both hands' next notes, colour dots, green and red marks, the ghost note with its sharp on
@@ -50,7 +63,7 @@ its one warning is about silence). Validator: 0 errors, 0 warnings.
 Save your project first; plugins run without crash protection. Update with:
 
 ```bash
-python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.2.0-mpc.zip
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.3.0-mpc.zip
 ```
 
 It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps
@@ -68,14 +81,19 @@ its settings (new settings start at their defaults).
 6. **Responsiveness with twice the widgets on PLAY:** does switching to PLAY take noticeably
    longer than in 0.1.0? Does the screen keep up when a half turns with dots on?
    (`tools/mpc_threads.sh` from mpc-mpe gives per-thread CPU over SSH.)
-7. **LinnStrument** (LINN → Linn Mode On), as before. The layout defaults (200, +5 row offset,
+7. **LISTEN:** add a track with any instrument, MIDI input **Sight Reader MIDI Out**, channel
+   All, monitor In. Load a piece, press LISTEN on PLAY: the instrument plays it, the cursor
+   follows. Turn Tempo while it plays. If the port is not listed: Preferences → MIDI / Sync →
+   Input Ports, Track on for it; if it is listed but silent, say so (and whether Accomp sounds).
+8. **LinnStrument** (LINN → Linn Mode On), as before; with Guide on, LISTEN lights the notes as
+   they sound. The layout defaults (200, +5 row offset,
    lowest note F#1) already match a LinnStrument 200 with the default row offset.
 
 ## Known risks and what to do
 
 | Risk | Sign | Remedy |
 |---|---|---|
-| 1,553 parameters, 1,436 widgets on PLAY, TUI.json 1.3 MB | slow plugin load or slow switch to PLAY | the skin can lay the cell and mark grids out with the format's `repeats` feature (one row of widgets repeated 20 times, `{Increment}` parameter indices; SDK ui-reference 4.6) instead of 1,320 entries: much smaller JSON, untested on the device. Or lower `SLOTS` (20) in `tools/skin/geometry.py`: 14 slots is ~460 cells |
+| 1,557 parameters, 1,438 widgets on PLAY, TUI.json 1.3 MB | slow plugin load or slow switch to PLAY | the skin can lay the cell and mark grids out with the format's `repeats` feature (one row of widgets repeated 20 times, `{Increment}` parameter indices; SDK ui-reference 4.6) instead of 1,320 entries: much smaller JSON, untested on the device. Or lower `SLOTS` (20) in `tools/skin/geometry.py`: 14 slots is ~460 cells |
 | Screen-thread cost of many picture changes | the UI lags when a half page turns | keep View = Halves or Page; Note Colors off halves the pictures changed per turn; lower the per-block budget in `pushDisplay()` |
 | MPC's film-strip RAM cache (`/var/volatile/tmp/filmstrips`) grows per screen load | `/var` fills over a day of reloads | delete `temp_*.img` there (files not open are safe to delete, per the community notes); ask before doing it |
 | `audioMasterUpdateDisplay` rebuilds the page | popups close while the list or a message updates | it is only sent when text changes, at most about 10 a second |
@@ -116,6 +134,9 @@ its settings (new settings start at their defaults).
 ## Open questions for you
 
 - Your first message ended with "there should also be a" — what was the rest?
+- LISTEN plays the quantised notes on screen, without the file's sustain pedal or other
+  controllers. Do you want the file's own timing and pedal instead (closer to a performance,
+  further from the notation)?
 - Do you want light versions of the settings pages back (each adds a tab button)?
 - Is the Live III the only MPC this needs to run on? (The 32-bit build is made but would be
   slower.)

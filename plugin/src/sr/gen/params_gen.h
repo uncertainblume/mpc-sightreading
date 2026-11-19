@@ -95,8 +95,12 @@ constexpr ControlDef kControls[] = {
     {"click_type", "Click", 3, 0, 2, 0, "", "Tick|Wood|Beep"},
     {"click_vol", "Click Vol", 1, 0.0, 100.0, 40.0, "%", ""},
     {"snd_test", "Test", 4, 0.0, 1.0, 0.0, "", ""},
+    {"listen", "Listen", 2, 0.0, 1.0, 0.0, "", ""},
+    {"listen_at", "Listen At", 3, 0, 6, 0, "", "Tempo|25%|50%|75%|100%|125%|150%"},
+    {"listen_hands", "Listen Hands", 3, 0, 1, 0, "", "Both|Practised"},
+    {"out_ch", "Out Ch", 1, 1.0, 16.0, 1.0, "", ""},
 };
-constexpr int kNumControls = 91;
+constexpr int kNumControls = 95;
 enum ControlId {
     P_BLIP_VOL = 0,
     P_MODE = 1,
@@ -189,8 +193,12 @@ enum ControlId {
     P_CLICK_TYPE = 88,
     P_CLICK_VOL = 89,
     P_SND_TEST = 90,
+    P_LISTEN = 91,
+    P_LISTEN_AT = 92,
+    P_LISTEN_HANDS = 93,
+    P_OUT_CH = 94,
 };
-constexpr int kTextBase = 91, kNumTexts = 22;
+constexpr int kTextBase = 95, kNumTexts = 22;
 enum TextId {
     T_TITLE = 0,
     T_FOLDER_NAME = 1,
@@ -215,62 +223,62 @@ enum TextId {
     T_MPC_KEY = 20,
     T_GEN_DESC = 21,
 };
-constexpr int kD_cell = 113, kN_cell = 660;
-constexpr int kD_mark = 773, kN_mark = 660;  // 133 frames
+constexpr int kD_cell = 117, kN_cell = 660;
+constexpr int kD_mark = 777, kN_mark = 660;  // 133 frames
 constexpr int kF_mark = 133;
-constexpr int kD_overlay = 1433, kN_overlay = 20;  // 6 frames
+constexpr int kD_overlay = 1437, kN_overlay = 20;  // 6 frames
 constexpr int kF_overlay = 6;
-constexpr int kD_mask = 1453, kN_mask = 2;  // 3 frames
+constexpr int kD_mask = 1457, kN_mask = 2;  // 3 frames
 constexpr int kF_mask = 3;
-constexpr int kD_barline = 1455, kN_barline = 21;  // 6 frames
+constexpr int kD_barline = 1459, kN_barline = 21;  // 6 frames
 constexpr int kF_barline = 6;
-constexpr int kD_keysig = 1476, kN_keysig = 1;  // 15 frames
+constexpr int kD_keysig = 1480, kN_keysig = 1;  // 15 frames
 constexpr int kF_keysig = 15;
-constexpr int kD_timesig = 1477, kN_timesig = 1;  // 15 frames
+constexpr int kD_timesig = 1481, kN_timesig = 1;  // 15 frames
 constexpr int kF_timesig = 15;
-constexpr int kD_flash = 1478, kN_flash = 1;  // 3 frames
+constexpr int kD_flash = 1482, kN_flash = 1;  // 3 frames
 constexpr int kF_flash = 3;
-constexpr int kD_status = 1479, kN_status = 1;  // 10 frames
-constexpr int kF_status = 10;
-constexpr int kD_handicon = 1480, kN_handicon = 1;  // 3 frames
+constexpr int kD_status = 1483, kN_status = 1;  // 11 frames
+constexpr int kF_status = 11;
+constexpr int kD_handicon = 1484, kN_handicon = 1;  // 3 frames
 constexpr int kF_handicon = 3;
-constexpr int kD_d_bar = 1481, kN_d_bar = 3;  // 11 frames
+constexpr int kD_d_bar = 1485, kN_d_bar = 3;  // 11 frames
 constexpr int kF_d_bar = 11;
-constexpr int kD_d_bars = 1484, kN_d_bars = 3;  // 11 frames
+constexpr int kD_d_bars = 1488, kN_d_bars = 3;  // 11 frames
 constexpr int kF_d_bars = 11;
-constexpr int kD_d_acc = 1487, kN_d_acc = 3;  // 11 frames
+constexpr int kD_d_acc = 1491, kN_d_acc = 3;  // 11 frames
 constexpr int kF_d_acc = 11;
-constexpr int kD_d_bpm = 1490, kN_d_bpm = 3;  // 11 frames
+constexpr int kD_d_bpm = 1494, kN_d_bpm = 3;  // 11 frames
 constexpr int kF_d_bpm = 11;
-constexpr int kD_d_err = 1493, kN_d_err = 3;  // 11 frames
+constexpr int kD_d_err = 1497, kN_d_err = 3;  // 11 frames
 constexpr int kF_d_err = 11;
-constexpr int kD_nextname = 1496, kN_nextname = 1;  // 177 frames
+constexpr int kD_nextname = 1500, kN_nextname = 1;  // 177 frames
 constexpr int kF_nextname = 177;
-constexpr int kD_playedname = 1497, kN_playedname = 1;  // 177 frames
+constexpr int kD_playedname = 1501, kN_playedname = 1;  // 177 frames
 constexpr int kF_playedname = 177;
-constexpr int kD_finger = 1498, kN_finger = 2;  // 6 frames
+constexpr int kD_finger = 1502, kN_finger = 2;  // 6 frames
 constexpr int kF_finger = 6;
-constexpr int kD_mnum = 1500, kN_mnum = 6;  // 11 frames
+constexpr int kD_mnum = 1504, kN_mnum = 6;  // 11 frames
 constexpr int kF_mnum = 11;
-constexpr int kD_progress = 1506, kN_progress = 1;
-constexpr int kD_linnstate = 1507, kN_linnstate = 1;  // 4 frames
+constexpr int kD_progress = 1510, kN_progress = 1;
+constexpr int kD_linnstate = 1511, kN_linnstate = 1;  // 4 frames
 constexpr int kF_linnstate = 4;
-constexpr int kD_statbar = 1508, kN_statbar = 16;  // 21 frames
+constexpr int kD_statbar = 1512, kN_statbar = 16;  // 21 frames
 constexpr int kF_statbar = 21;
-constexpr int kD_d_best = 1524, kN_d_best = 3;  // 11 frames
+constexpr int kD_d_best = 1528, kN_d_best = 3;  // 11 frames
 constexpr int kF_d_best = 11;
-constexpr int kD_d_last = 1527, kN_d_last = 3;  // 11 frames
+constexpr int kD_d_last = 1531, kN_d_last = 3;  // 11 frames
 constexpr int kF_d_last = 11;
-constexpr int kD_d_passes = 1530, kN_d_passes = 3;  // 11 frames
+constexpr int kD_d_passes = 1534, kN_d_passes = 3;  // 11 frames
 constexpr int kF_d_passes = 11;
-constexpr int kD_d_minutes = 1533, kN_d_minutes = 4;  // 11 frames
+constexpr int kD_d_minutes = 1537, kN_d_minutes = 4;  // 11 frames
 constexpr int kF_d_minutes = 11;
-constexpr int kD_d_streak = 1537, kN_d_streak = 3;  // 11 frames
+constexpr int kD_d_streak = 1541, kN_d_streak = 3;  // 11 frames
 constexpr int kF_d_streak = 11;
-constexpr int kD_nextname_lh = 1540, kN_nextname_lh = 1;  // 177 frames
+constexpr int kD_nextname_lh = 1544, kN_nextname_lh = 1;  // 177 frames
 constexpr int kF_nextname_lh = 177;
-constexpr int kD_swatch = 1541, kN_swatch = 12;  // 16 frames
+constexpr int kD_swatch = 1545, kN_swatch = 12;  // 16 frames
 constexpr int kF_swatch = 16;
-constexpr int kDisplayBase = 113;
-constexpr int kNumParams = 1553;
+constexpr int kDisplayBase = 117;
+constexpr int kNumParams = 1557;
 }} // namespace sr::gen

@@ -341,6 +341,52 @@ int main(int argc, char** argv)
         CHECK(digits(p, gen::kD_d_acc, 3) == 100);
         CHECK(errorsSeen <= 0);
     }
+    // ---- LISTEN: the piece in time, the cursor following; the practice position stays ----------
+    {
+        auto cursor = [&p]() { for (int sl = 0; sl < gen::kSlots; ++sl) if (p.frame(gen::kD_overlay + sl, gen::kOverlayFrames) == 1) return sl; return -1; };
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.2);
+        p.e->setParameter(p.e, gen::P_TEMPO, 1.0f);                      // 200 %: 64 beats at 200 bpm, 19.2 s
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f);
+        p.waitWorker(0.3);
+        std::string msg = p.text(gen::kTextBase + gen::T_MESSAGE);
+        std::printf("listen: status %d, message '%s'\n", p.frame(gen::kD_status, gen::kStatusFrames), msg.c_str());
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 10);        // LISTEN
+        CHECK(msg.find("Listening at 200%") != std::string::npos);
+        int last = cursor(), moves = 0; std::vector<int> halves; double secs = 0;
+        while (secs < 25 && p.e->getParameter(p.e, gen::P_LISTEN) >= 0.5f)
+        {
+            p.run(0.05); secs += 0.05;
+            int c = cursor(); if (c != last) { ++moves; last = c; }
+            int m0 = digits(p, gen::kD_mnum, 3); if (halves.empty() || halves.back() != m0) halves.push_back(m0);
+        }
+        std::printf("listen: %.1f s, cursor moved %d times, first-half bars", secs, moves);
+        for (int m : halves) std::printf(" %d", m);
+        std::printf("\n");
+        CHECK(secs > 17.5 && secs < 21.0);                                 // 19.2 s at 200 %
+        CHECK(moves >= 60);
+        CHECK(halves.size() >= 4);
+        p.run(0.2);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 1);         // WAIT again
+        CHECK(cursor() == 0);                                              // the practice cursor never moved
+        CHECK(digits(p, gen::kD_d_err, 3) <= 0 && digits(p, gen::kD_d_acc, 3) < 0);
+        // notes played while it plays are not graded; PLAY stops it
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f); p.run(0.3);
+        p.block({{0x90, 61, 100}}); p.run(0.1);
+        CHECK(digits(p, gen::kD_d_err, 3) <= 0);
+        p.e->setParameter(p.e, gen::P_PLAY, 1.0f); p.run(0.1);
+        CHECK(p.e->getParameter(p.e, gen::P_LISTEN) < 0.5f);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 1);
+        // with Loop on (bar 1, one bar = 1.2 s) it goes round until stopped
+        p.e->setParameter(p.e, gen::P_PLAY, 0.0f);
+        p.e->setParameter(p.e, gen::P_LOOP_BARS, 0.0f);
+        p.e->setParameter(p.e, gen::P_LOOP, 1.0f); p.run(0.1);
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f); p.run(3.0);
+        CHECK(p.e->getParameter(p.e, gen::P_LISTEN) >= 0.5f);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 10);
+        p.e->setParameter(p.e, gen::P_LISTEN, 0.0f); p.run(0.1);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 9);         // LOOP (practice) again
+        p.e->setParameter(p.e, gen::P_LOOP, 0.0f); p.run(0.1);
+    }
     std::printf("automate %d updateDisplay %d\n", g_automate, g_updates);
     p.d(effMainsChanged, 0, 0); p.d(effClose);
     std::printf("plugin_test: %s (%d failures)\n", g_fail ? "FAILED" : "ok", g_fail);

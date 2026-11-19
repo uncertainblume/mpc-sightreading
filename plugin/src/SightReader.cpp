@@ -218,7 +218,7 @@ public:
     {
         engine_.restart();
         accompAllOff();
-        forceFullPush_ = true;
+        forceFullPush_ = true; forceCursor_ = gen::kDisplayBase;
     }
 
     // ---- parameter side effects (any thread: keep it to flags) --------------------------------
@@ -841,24 +841,41 @@ private:
 
     void pushDisplay()
     {
-        // Small, frequent things first (overlays, status), then the cells.
-        int budget = forceFullPush_ ? 96 : 48;
+        // Each push makes the MPC's screen thread redraw something, so only changes are sent,
+        // at most 48 a block (a page turn of ~150 cells takes a few blocks). After a reset
+        // or a state load everything is re-sent once, in order, from a moving cursor.
+        auto push = [this](int i, float want) {
+            inParamChange_ = true;
+            setNormalised(i, want);
+            inParamChange_ = false;
+            notifyHostParameterChanged(i);
+        };
+        if (forceFullPush_)
+        {
+            int budget = 96;
+            if (forceCursor_ < gen::kDisplayBase) forceCursor_ = gen::kDisplayBase;
+            while (budget > 0 && forceCursor_ < gen::kNumParams)
+            {
+                float want = desired_[forceCursor_];
+                if (want >= 0) { push(forceCursor_, want); --budget; }
+                ++forceCursor_;
+            }
+            if (forceCursor_ >= gen::kNumParams) { forceFullPush_ = false; forceCursor_ = gen::kDisplayBase; }
+            return;
+        }
+        int budget = 48;
         auto pushRange = [&](int from, int to) {
             for (int i = from; i < to && budget > 0; ++i)
             {
                 float want = desired_[i];
-                if (want < 0) continue;
-                if (!forceFullPush_ && std::fabs(getNormalised(i) - want) < 1e-6f) continue;
-                inParamChange_ = true;
-                setNormalised(i, want);
-                inParamChange_ = false;
-                notifyHostParameterChanged(i);
+                if (want < 0 || std::fabs(getNormalised(i) - want) < 1e-6f) continue;
+                push(i, want);
                 --budget;
             }
         };
+        // small, frequent things first (overlays, status, counters), then the cells
         pushRange(gen::kD_overlay, gen::kNumParams);
         pushRange(gen::kD_cell, gen::kD_overlay);
-        if (forceFullPush_ && budget > 0) forceFullPush_ = false;
     }
 
     // ---- worker thread --------------------------------------------------------------------------------
@@ -1201,6 +1218,7 @@ private:
     float desired_[gen::kNumParams];
     int screenSlot_[gen::kSlots] = {};
     bool forceFullPush_ = true;
+    int forceCursor_ = gen::kDisplayBase;
     int flashFrame_ = 0, flashBlocks_ = 0;
     int lastPlayed_ = -1, wrongShown_ = -1;
     uint64_t blockCounter_ = 0, lastUpdateDisplayBlock_ = 0;

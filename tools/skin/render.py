@@ -434,3 +434,93 @@ if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "/tmp/skin_test"
     for th in THEMES:
         print(th, render_theme(th, out))
+
+# ---------------------------------------------------------------------------------------------
+# Header pictures and controls
+# ---------------------------------------------------------------------------------------------
+DIGIT_W, DIGIT_H = 17, 30
+SMALL_DIGIT_W, SMALL_DIGIT_H = 9, 16
+STATUS_W, STATUS_H = 150, 40
+HAND_W, HAND_H = 70, 22
+NOTE_W, NOTE_H = 70, 32
+FINGER_W, FINGER_H = 22, 30
+LINNSTATE_W, LINNSTATE_H = 300, 26
+STATBAR_W, STATBAR_H = 52, 220
+KNOB_SIZE, KNOB_FRAMES = 64, 64
+
+def ui_images(theme, out):
+    """Writes the header/controls images for a theme; returns {name: (file, frames, w, h)}."""
+    t = THEMES[theme]
+    meta = {}
+    def save(name, img, frames, w, h):
+        fn = "%s_%s.png" % (theme, name)
+        img.save(os.path.join(out, fn), optimize=True)
+        meta[name] = (fn, frames, w, h)
+    save("digits", text_strip(G.DIGIT_FRAMES, theme, DIGIT_W, DIGIT_H, 28, "TitilliumWeb-SemiBold.ttf"), len(G.DIGIT_FRAMES), DIGIT_W, DIGIT_H)
+    save("digits_small", text_strip(G.DIGIT_FRAMES, theme, SMALL_DIGIT_W, SMALL_DIGIT_H, 15, "TitilliumWeb-SemiBold.ttf", "text_dim"), len(G.DIGIT_FRAMES), SMALL_DIGIT_W, SMALL_DIGIT_H)
+    save("status", text_strip(G.STATUS_FRAMES, theme, STATUS_W, STATUS_H, 26, "TitilliumWeb-Bold.ttf", rgba(t["hi"])), len(G.STATUS_FRAMES), STATUS_W, STATUS_H)
+    save("hand", text_strip(G.HAND_FRAMES, theme, HAND_W, HAND_H, 17, "TitilliumWeb-SemiBold.ttf", "text_dim"), len(G.HAND_FRAMES), HAND_W, HAND_H)
+    save("notename", text_strip(G.notename_frames(), theme, NOTE_W, NOTE_H, 27, "TitilliumWeb-Bold.ttf"), len(G.notename_frames()), NOTE_W, NOTE_H)
+    save("notename_played", text_strip(G.notename_frames(), theme, NOTE_W, NOTE_H, 27, "TitilliumWeb-SemiBold.ttf", "text_dim"), len(G.notename_frames()), NOTE_W, NOTE_H)
+    save("finger", text_strip(G.FINGER_FRAMES, theme, FINGER_W, FINGER_H, 26, "TitilliumWeb-Bold.ttf", rgba(t["hi"])), len(G.FINGER_FRAMES), FINGER_W, FINGER_H)
+    save("linnstate", text_strip(G.LINNSTATE_FRAMES, theme, LINNSTATE_W, LINNSTATE_H, 17, "TitilliumWeb-SemiBold.ttf", "text_dim", "left"), len(G.LINNSTATE_FRAMES), LINNSTATE_W, LINNSTATE_H)
+    save("statbar", bar_strip(theme, STATBAR_W, STATBAR_H), G.BAR_FRAMES, STATBAR_W, STATBAR_H)
+    save("flash", flash_strip(theme, G.TAB_W, G.GRID_BOTTOM - G.GRID_TOP), len(G.FLASH_FRAMES), G.TAB_W, G.GRID_BOTTOM - G.GRID_TOP)
+    save("knob", knob_strip(theme), KNOB_FRAMES, KNOB_SIZE, KNOB_SIZE)
+    return meta
+
+def knob_strip(theme):
+    import math
+    t = THEMES[theme]
+    frames = []
+    S4 = KNOB_SIZE * 4
+    for k in range(KNOB_FRAMES):
+        v = k / (KNOB_FRAMES - 1.0)
+        im = Image.new("RGBA", (S4, S4), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        pad = 18
+        box = [pad, pad, S4 - pad, S4 - pad]
+        d.arc(box, 135, 405, fill=rgba(t["panel_line"]), width=22)
+        if v > 0:
+            d.arc(box, 135, 135 + 270 * v, fill=rgba(t["hi"]), width=22)
+        inner = [pad + 46, pad + 46, S4 - pad - 46, S4 - pad - 46]
+        d.ellipse(inner, fill=rgba(t["panel"]), outline=rgba(t["panel_line"]), width=6)
+        ang = math.radians(135 + 270 * v)
+        cx = cy = S4 / 2
+        r0, r1 = 20, (S4 / 2) - pad - 60
+        d.line([(cx + r0 * math.cos(ang), cy + r0 * math.sin(ang)), (cx + r1 * math.cos(ang), cy + r1 * math.sin(ang))], fill=rgba(t["text"]), width=14)
+        frames.append(im.resize((KNOB_SIZE, KNOB_SIZE), Image.LANCZOS))
+    return stack(frames)
+
+def box_image(theme, w, h, on, style="segment"):
+    """Transparent-centred highlight images for buttons drawn OVER their caption labels."""
+    t = THEMES[theme]
+    S2 = 2
+    im = Image.new("RGBA", (w * S2, h * S2), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    r = 10 * S2
+    if style == "row":
+        if on:
+            d.rounded_rectangle([0, 0, w * S2 - 1, h * S2 - 1], r, fill=rgba(t["hi"], 70), outline=rgba(t["hi"]), width=3 * S2)
+        else:
+            d.line([(8 * S2, h * S2 - 2), (w * S2 - 8 * S2, h * S2 - 2)], fill=rgba(t["panel_line"]), width=S2)
+    elif style == "button":
+        if on:
+            d.rounded_rectangle([0, 0, w * S2 - 1, h * S2 - 1], r, fill=rgba(t["hi"], 120), outline=rgba(t["hi"]), width=3 * S2)
+        else:
+            d.rounded_rectangle([0, 0, w * S2 - 1, h * S2 - 1], r, fill=rgba(t["text"], 18), outline=rgba(t["panel_line"]), width=2 * S2)
+    else:   # segment of a switch
+        if on:
+            d.rounded_rectangle([1, 1, w * S2 - 2, h * S2 - 2], r, fill=rgba(t["hi"], 110), outline=rgba(t["hi"]), width=2 * S2)
+        else:
+            d.rounded_rectangle([1, 1, w * S2 - 2, h * S2 - 2], r, fill=rgba(t["text"], 10), outline=rgba(t["panel_line"]), width=2 * S2)
+    return im.resize((w, h), Image.LANCZOS)
+
+def barline_cell_strip(theme):
+    """Barlines drawn at the left edge of a slot-wide frame (for repeated slot columns)."""
+    src = barline_strip(theme)
+    n = len(G.BARLINE_FRAMES)
+    h = src.size[1] // n
+    out = Image.new("RGBA", (BAR_W, h * n), (0, 0, 0, 0))
+    out.paste(src, (0, 0))
+    return out

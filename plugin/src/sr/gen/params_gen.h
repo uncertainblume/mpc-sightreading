@@ -65,24 +65,24 @@ constexpr ControlDef kControls[] = {
     {"linn_size", "Linn Size", 3, 0, 1, 0, "", "200 (25 col)|128 (16 col)"},
     {"linn_rowoff", "Row Offset", 3, 0, 5, 0, "", "+5 (4ths)|+4|+3|+6|+7|Octave"},
     {"linn_low", "Lowest Note", 5, 0.0, 72.0, 30.0, "", ""},
-    {"linn_ch", "Linn Ch", 1, 1.0, 16.0, 1.0, "", ""},
+    {"linn_ch", "Linn Ch", 1, 1.0, 16.0, 2.0, "", ""},
     {"linn_left", "Left-Handed", 2, 0.0, 1.0, 0.0, "", ""},
     {"linn_sync", "Read Key", 4, 0.0, 1.0, 0.0, "", ""},
     {"note_colors", "Note Colors", 2, 0.0, 1.0, 1.0, "", ""},
     {"feedback", "Feedback", 3, 0, 2, 2, "", "Off|Green|Green+Red"},
     {"col_reset", "Reset Colors", 4, 0.0, 1.0, 0.0, "", ""},
-    {"col_c", "C", 3, 0, 16, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_cs", "C#", 3, 0, 16, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_d", "D", 3, 0, 16, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_ds", "D#", 3, 0, 16, 16, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_e", "E", 3, 0, 16, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_f", "F", 3, 0, 16, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_fs", "F#", 3, 0, 16, 13, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_g", "G", 3, 0, 16, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_gs", "G#", 3, 0, 16, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_a", "A", 3, 0, 16, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_as", "A#", 3, 0, 16, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_b", "B", 3, 0, 16, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
+    {"col_c", "C", 3, 0, 17, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_cs", "C#", 3, 0, 17, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_d", "D", 3, 0, 17, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_ds", "D#", 3, 0, 17, 16, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_e", "E", 3, 0, 17, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_f", "F", 3, 0, 17, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_fs", "F#", 3, 0, 17, 17, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_g", "G", 3, 0, 17, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_gs", "G#", 3, 0, 17, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_a", "A", 3, 0, 17, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_as", "A#", 3, 0, 17, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_b", "B", 3, 0, 17, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
     {"snd_type", "Sound", 3, 0, 5, 0, "", "Wood|Soft Tick|Low Thud|Bell|Sine|Square"},
     {"snd_vol", "Error Vol", 1, 0.0, 100.0, 30.0, "%", ""},
     {"snd_pitch", "Pitch", 1, -24.0, 24.0, 0.0, "st", ""},
@@ -99,8 +99,38 @@ constexpr ControlDef kControls[] = {
     {"listen_at", "Listen At", 3, 0, 6, 0, "", "Tempo|25%|50%|75%|100%|125%|150%"},
     {"listen_hands", "Listen Hands", 3, 0, 1, 0, "", "Both|Practised"},
     {"out_ch", "Out Ch", 1, 1.0, 16.0, 1.0, "", ""},
+    {"goto_bar", "Bar", 1, 0.0, 999.0, 1.0, "", ""},
+    {"goto_step", "Note", 1, 1.0, 9999.0, 1.0, "", ""},
+    {"bpm", "BPM", 1, 20.0, 300.0, 100.0, "", ""},
+    {"loop_to", "Loop To", 1, 1.0, 999.0, 4.0, "", ""},
+    {"auto_next", "Auto Next", 2, 0.0, 1.0, 1.0, "", ""},
+    {"piece", "Piece", 1, 1.0, 999.0, 1.0, "", ""},
+    {"piece_go", "Load Piece", 4, 0.0, 1.0, 0.0, "", ""},
+    {"select", "Select", 1, 0.0, 1999.0, 0.0, "", ""},
+    {"pick0", "Pick 1", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick1", "Pick 2", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick2", "Pick 3", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick3", "Pick 4", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick4", "Pick 5", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick5", "Pick 6", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick6", "Pick 7", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pick7", "Pick 8", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick0", "Queue 1", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick1", "Queue 2", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick2", "Queue 3", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick3", "Queue 4", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick4", "Queue 5", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick5", "Queue 6", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick6", "Queue 7", 4, 0.0, 1.0, 0.0, "", ""},
+    {"qpick7", "Queue 8", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pl_add", "Add To List", 4, 0.0, 1.0, 0.0, "", ""},
+    {"pl_remove", "Remove", 4, 0.0, 1.0, 0.0, "", ""},
+    {"linn_port", "Linn Port", 3, 0, 2, 0, "", "USB|MPC Out A|MPC Out B"},
+    {"linn_test", "Test Lights", 4, 0.0, 1.0, 0.0, "", ""},
+    {"linn_restore", "Restore", 3, 0, 1, 1, "", "Off|Note Colors"},
+    {"qpanel", "Piece List", 2, 0.0, 1.0, 0.0, "", ""},
 };
-constexpr int kNumControls = 95;
+constexpr int kNumControls = 125;
 enum ControlId {
     P_BLIP_VOL = 0,
     P_MODE = 1,
@@ -197,8 +227,38 @@ enum ControlId {
     P_LISTEN_AT = 92,
     P_LISTEN_HANDS = 93,
     P_OUT_CH = 94,
+    P_GOTO_BAR = 95,
+    P_GOTO_STEP = 96,
+    P_BPM = 97,
+    P_LOOP_TO = 98,
+    P_AUTO_NEXT = 99,
+    P_PIECE = 100,
+    P_PIECE_GO = 101,
+    P_SELECT = 102,
+    P_PICK0 = 103,
+    P_PICK1 = 104,
+    P_PICK2 = 105,
+    P_PICK3 = 106,
+    P_PICK4 = 107,
+    P_PICK5 = 108,
+    P_PICK6 = 109,
+    P_PICK7 = 110,
+    P_QPICK0 = 111,
+    P_QPICK1 = 112,
+    P_QPICK2 = 113,
+    P_QPICK3 = 114,
+    P_QPICK4 = 115,
+    P_QPICK5 = 116,
+    P_QPICK6 = 117,
+    P_QPICK7 = 118,
+    P_PL_ADD = 119,
+    P_PL_REMOVE = 120,
+    P_LINN_PORT = 121,
+    P_LINN_TEST = 122,
+    P_LINN_RESTORE = 123,
+    P_QPANEL = 124,
 };
-constexpr int kTextBase = 95, kNumTexts = 22;
+constexpr int kTextBase = 125, kNumTexts = 31;
 enum TextId {
     T_TITLE = 0,
     T_FOLDER_NAME = 1,
@@ -222,67 +282,80 @@ enum TextId {
     T_LINN_STATUS = 19,
     T_MPC_KEY = 20,
     T_GEN_DESC = 21,
+    T_Q0 = 22,
+    T_Q1 = 23,
+    T_Q2 = 24,
+    T_Q3 = 25,
+    T_Q4 = 26,
+    T_Q5 = 27,
+    T_Q6 = 28,
+    T_Q7 = 29,
+    T_QINFO = 30,
 };
-constexpr int kD_cell = 117, kN_cell = 660;
-constexpr int kD_mark = 777, kN_mark = 660;  // 139 frames
-constexpr int kF_mark = 139;
-constexpr int kD_overlay = 1437, kN_overlay = 20;  // 6 frames
+constexpr int kD_cell = 156, kN_cell = 660;
+constexpr int kD_mark = 816, kN_mark = 660;  // 153 frames
+constexpr int kF_mark = 153;
+constexpr int kD_overlay = 1476, kN_overlay = 20;  // 6 frames
 constexpr int kF_overlay = 6;
-constexpr int kD_mask = 1457, kN_mask = 2;  // 3 frames
+constexpr int kD_mask = 1496, kN_mask = 2;  // 3 frames
 constexpr int kF_mask = 3;
-constexpr int kD_barline = 1459, kN_barline = 21;  // 6 frames
+constexpr int kD_barline = 1498, kN_barline = 21;  // 6 frames
 constexpr int kF_barline = 6;
-constexpr int kD_keysig = 1480, kN_keysig = 1;  // 15 frames
+constexpr int kD_keysig = 1519, kN_keysig = 1;  // 15 frames
 constexpr int kF_keysig = 15;
-constexpr int kD_timesig = 1481, kN_timesig = 1;  // 15 frames
+constexpr int kD_timesig = 1520, kN_timesig = 1;  // 15 frames
 constexpr int kF_timesig = 15;
-constexpr int kD_flash = 1482, kN_flash = 1;  // 3 frames
+constexpr int kD_flash = 1521, kN_flash = 1;  // 3 frames
 constexpr int kF_flash = 3;
-constexpr int kD_status = 1483, kN_status = 1;  // 11 frames
+constexpr int kD_status = 1522, kN_status = 1;  // 11 frames
 constexpr int kF_status = 11;
-constexpr int kD_handicon = 1484, kN_handicon = 1;  // 3 frames
+constexpr int kD_handicon = 1523, kN_handicon = 1;  // 3 frames
 constexpr int kF_handicon = 3;
-constexpr int kD_d_bar = 1485, kN_d_bar = 3;  // 11 frames
+constexpr int kD_d_bar = 1524, kN_d_bar = 3;  // 11 frames
 constexpr int kF_d_bar = 11;
-constexpr int kD_d_bars = 1488, kN_d_bars = 3;  // 11 frames
+constexpr int kD_d_bars = 1527, kN_d_bars = 3;  // 11 frames
 constexpr int kF_d_bars = 11;
-constexpr int kD_d_acc = 1491, kN_d_acc = 3;  // 11 frames
+constexpr int kD_d_acc = 1530, kN_d_acc = 3;  // 11 frames
 constexpr int kF_d_acc = 11;
-constexpr int kD_d_bpm = 1494, kN_d_bpm = 3;  // 11 frames
+constexpr int kD_d_bpm = 1533, kN_d_bpm = 3;  // 11 frames
 constexpr int kF_d_bpm = 11;
-constexpr int kD_d_err = 1497, kN_d_err = 3;  // 11 frames
+constexpr int kD_d_err = 1536, kN_d_err = 3;  // 11 frames
 constexpr int kF_d_err = 11;
-constexpr int kD_nextname = 1500, kN_nextname = 1;  // 177 frames
+constexpr int kD_nextname = 1539, kN_nextname = 1;  // 177 frames
 constexpr int kF_nextname = 177;
-constexpr int kD_playedname = 1501, kN_playedname = 1;  // 177 frames
+constexpr int kD_playedname = 1540, kN_playedname = 1;  // 177 frames
 constexpr int kF_playedname = 177;
-constexpr int kD_finger = 1502, kN_finger = 2;  // 6 frames
+constexpr int kD_finger = 1541, kN_finger = 2;  // 6 frames
 constexpr int kF_finger = 6;
-constexpr int kD_mnum = 1504, kN_mnum = 6;  // 11 frames
+constexpr int kD_mnum = 1543, kN_mnum = 6;  // 11 frames
 constexpr int kF_mnum = 11;
-constexpr int kD_progress = 1510, kN_progress = 1;
-constexpr int kD_linnstate = 1511, kN_linnstate = 1;  // 4 frames
+constexpr int kD_progress = 1549, kN_progress = 1;
+constexpr int kD_linnstate = 1550, kN_linnstate = 1;  // 4 frames
 constexpr int kF_linnstate = 4;
-constexpr int kD_statbar = 1512, kN_statbar = 16;  // 21 frames
+constexpr int kD_statbar = 1551, kN_statbar = 16;  // 21 frames
 constexpr int kF_statbar = 21;
-constexpr int kD_d_best = 1528, kN_d_best = 3;  // 11 frames
+constexpr int kD_d_best = 1567, kN_d_best = 3;  // 11 frames
 constexpr int kF_d_best = 11;
-constexpr int kD_d_last = 1531, kN_d_last = 3;  // 11 frames
+constexpr int kD_d_last = 1570, kN_d_last = 3;  // 11 frames
 constexpr int kF_d_last = 11;
-constexpr int kD_d_passes = 1534, kN_d_passes = 3;  // 11 frames
+constexpr int kD_d_passes = 1573, kN_d_passes = 3;  // 11 frames
 constexpr int kF_d_passes = 11;
-constexpr int kD_d_minutes = 1537, kN_d_minutes = 4;  // 11 frames
+constexpr int kD_d_minutes = 1576, kN_d_minutes = 4;  // 11 frames
 constexpr int kF_d_minutes = 11;
-constexpr int kD_d_streak = 1541, kN_d_streak = 3;  // 11 frames
+constexpr int kD_d_streak = 1580, kN_d_streak = 3;  // 11 frames
 constexpr int kF_d_streak = 11;
-constexpr int kD_nextname_lh = 1544, kN_nextname_lh = 1;  // 177 frames
+constexpr int kD_nextname_lh = 1583, kN_nextname_lh = 1;  // 177 frames
 constexpr int kF_nextname_lh = 177;
-constexpr int kD_swatch = 1545, kN_swatch = 12;  // 17 frames
-constexpr int kF_swatch = 17;
-constexpr int kD_ro = 1557, kN_ro = 32;
+constexpr int kD_swatch = 1584, kN_swatch = 12;  // 18 frames
+constexpr int kF_swatch = 18;
+constexpr int kD_ro = 1596, kN_ro = 35;
+constexpr int kD_rowsel = 1631, kN_rowsel = 8;  // 2 frames
+constexpr int kF_rowsel = 2;
+constexpr int kD_qsel = 1639, kN_qsel = 8;  // 3 frames
+constexpr int kF_qsel = 3;
 // readouts: display parameter kD_ro + i mirrors control kRoControl[i] (value - min), kRoFrames[i] frames
-constexpr int kRoControl[32] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS};
-constexpr int kRoFrames[32] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2};
-constexpr int kDisplayBase = 117;
-constexpr int kNumParams = 1589;
+constexpr int kRoControl[35] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS, P_AUTO_NEXT, P_LINN_PORT, P_LINN_RESTORE};
+constexpr int kRoFrames[35] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2, 2, 3, 2};
+constexpr int kDisplayBase = 156;
+constexpr int kNumParams = 1647;
 }} // namespace sr::gen

@@ -131,6 +131,55 @@ static float peakAfter(Plug& p, int param, double seconds)
     return peak;
 }
 
+// Plain values the way the plugin sees them, and the MPC's data wheel (a step of 1/100 of the range).
+static int plainOf(Plug& p, int idx)
+{
+    const auto& c = gen::kControls[idx];
+    return (int)std::lround(c.min + p.e->getParameter(p.e, idx) * (c.max - c.min));
+}
+static void setPlain(Plug& p, int idx, double v)
+{
+    const auto& c = gen::kControls[idx];
+    p.e->setParameter(p.e, idx, (float)((v - c.min) / (c.max - c.min)));
+}
+static void wheel(Plug& p, int idx, int steps)
+{
+    for (int i = 0; i < std::abs(steps); ++i)
+    {
+        float v = p.e->getParameter(p.e, idx) + (steps > 0 ? 0.01f : -0.01f);
+        p.e->setParameter(p.e, idx, std::max(0.0f, std::min(1.0f, v)));
+        p.block();
+    }
+}
+static void writeMid(const std::string& dir, const std::string& file, const std::vector<int>& rh, const std::vector<int>& lhWhole)
+{
+    std::vector<SmfWriteTrack> tr(lhWhole.empty() ? 1 : 2);
+    tr[0].name = "Right";
+    for (size_t i = 0; i < rh.size(); ++i) tr[0].notes.push_back({(int)i * 96, (int)(i + 1) * 96, (uint8_t)rh[i], 80});
+    if (!lhWhole.empty()) { tr[1].name = "Left"; for (size_t i = 0; i < lhWhole.size(); ++i) tr[1].notes.push_back({(int)i * 384, (int)(i + 1) * 384, (uint8_t)lhWhole[i], 70}); }
+    std::vector<uint8_t> bytes = writeSmf(96, 100, 4, 4, 0, false, file, tr);
+    std::string cmd = "mkdir -p '" + dir + "'";
+    if (std::system(cmd.c_str()) != 0) std::printf("mkdir failed\n");
+    FILE* mf = std::fopen((dir + "/" + file + ".mid").c_str(), "wb");
+    if (mf) { std::fwrite(bytes.data(), 1, bytes.size(), mf); std::fclose(mf); }
+}
+
+// Every value, text and name, for tools/skin/render_page.py.
+static void writeState(Plug& p, const std::string& statePath)
+{
+    FILE* sf = std::fopen(statePath.c_str(), "w");
+    if (!sf) return;
+    auto esc = [](const std::string& t) { std::string o; for (char c : t) { if (c == '"' || c == '\\') o.push_back('\\'); if ((unsigned char)c >= 32) o.push_back(c); } return o; };
+    std::fprintf(sf, "{\"values\": [");
+    for (int i = 0; i < gen::kNumParams; ++i) std::fprintf(sf, "%s%.6f", i ? "," : "", (double)p.e->getParameter(p.e, i));
+    std::fprintf(sf, "], \"text\": {");
+    for (int i = 0; i < gen::kDisplayBase; ++i) std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(p.text(i)).c_str());
+    std::fprintf(sf, "}, \"name\": {");
+    for (int i = 0; i < gen::kTextBase; ++i) { char b[256] = {0}; p.d(effGetParamName, i, 0, b); std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(b).c_str()); }
+    std::fprintf(sf, "}}\n");
+    std::fclose(sf);
+}
+
 static int digits(Plug& p, int base, int n)
 {
     int v = 0; bool any = false;
@@ -160,6 +209,15 @@ int main(int argc, char** argv)
         if (std::system(cmd.c_str()) != 0) std::printf("mkdir failed\n");
         FILE* mf = std::fopen((dir + "/long_scale.mid").c_str(), "wb");
         if (mf) { std::fwrite(bytes.data(), 1, bytes.size(), mf); std::fclose(mf); }
+    }
+    // 0.5.0: a folder of three short drills (the queue), and a piece that needs 8va and 8vb
+    const std::vector<int> drill = {60, 62, 64, 65, 67, 69, 71, 72};
+    {
+        std::string q = std::string(argv[2]) + "/Library/Queue";
+        writeMid(q, "a_first", drill, {});
+        writeMid(q, "b_second", drill, {});
+        writeMid(q, "c_third", drill, {});
+        writeMid(std::string(argv[2]) + "/Library/Ottava", "ottava", {88, 89, 91, 93, 72, 74, 76, 77}, {48, 33});
     }
     void* h = dlopen(argv[1], RTLD_NOW);
     if (!h) { std::printf("dlopen: %s\n", dlerror()); return 1; }
@@ -251,17 +309,7 @@ int main(int argc, char** argv)
     std::fprintf(f, "]}\n");
     std::fclose(f);
     // full state for tools/skin/render_page.py
-    std::string statePath = std::string(argv[3]) + ".state.json";
-    FILE* sf = std::fopen(statePath.c_str(), "w");
-    auto esc = [](const std::string& t) { std::string o; for (char c : t) { if (c == '"' || c == '\\') o.push_back('\\'); if ((unsigned char)c >= 32) o.push_back(c); } return o; };
-    std::fprintf(sf, "{\"values\": [");
-    for (int i = 0; i < gen::kNumParams; ++i) std::fprintf(sf, "%s%.6f", i ? "," : "", (double)p.e->getParameter(p.e, i));
-    std::fprintf(sf, "], \"text\": {");
-    for (int i = 0; i < gen::kDisplayBase; ++i) std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(p.text(i)).c_str());
-    std::fprintf(sf, "}, \"name\": {");
-    for (int i = 0; i < gen::kTextBase; ++i) { char b[256] = {0}; p.d(effGetParamName, i, 0, b); std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(b).c_str()); }
-    std::fprintf(sf, "}}\n");
-    std::fclose(sf);
+    writeState(p, std::string(argv[3]) + ".state.json");
     // a resume from the host keeps the place in the piece (0.1 went back to the start)
     int stepBefore = digits(p, gen::kD_d_acc, 3);
     p.d(effMainsChanged, 0, 0); p.d(effMainsChanged, 0, 1); p.run(0.3);
@@ -399,6 +447,129 @@ int main(int argc, char** argv)
         p.e->setParameter(p.e, gen::P_LISTEN, 0.0f); p.run(0.1);
         CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 9);         // LOOP (practice) again
         p.e->setParameter(p.e, gen::P_LOOP, 0.0f); p.run(0.1);
+    }
+    // ---- 0.5.0: the header's Bar, Note and BPM fields; loops ------------------------------------
+    {
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.2);
+        std::printf("bpm field %d at tempo %d%%\n", plainOf(p, gen::P_BPM), plainOf(p, gen::P_TEMPO));
+        CHECK(plainOf(p, gen::P_TEMPO) == 200 && plainOf(p, gen::P_BPM) == 200);   // BPM follows Tempo %
+        wheel(p, gen::P_GOTO_BAR, 3); p.run(0.1);                                   // Bar 1 -> 4
+        std::printf("bar field: bar %d, note %d\n", digits(p, gen::kD_d_bar, 3), plainOf(p, gen::P_GOTO_STEP));
+        CHECK(digits(p, gen::kD_d_bar, 3) == 4 && plainOf(p, gen::P_GOTO_STEP) == 13);
+        wheel(p, gen::P_GOTO_STEP, -1); p.run(0.1);                                 // one note back, into bar 3
+        CHECK(digits(p, gen::kD_d_bar, 3) == 3 && plainOf(p, gen::P_GOTO_BAR) == 3);
+        p.block({{0x90, (uint8_t)longNotes[11], 100}}); p.run(0.05); p.block({{0x80, (uint8_t)longNotes[11], 0}}); p.run(0.05);
+        CHECK(plainOf(p, gen::P_GOTO_STEP) == 13);                                  // played from there on
+        setPlain(p, gen::P_BPM, 80); p.run(0.1);
+        CHECK(plainOf(p, gen::P_TEMPO) == 80 && digits(p, gen::kD_d_bpm, 3) == 80);
+        setPlain(p, gen::P_TEMPO, 150); p.run(0.1);
+        CHECK(plainOf(p, gen::P_BPM) == 150);
+        // loop: From moves To with it, To pulls From back, Bars stretches and stays in the piece
+        setPlain(p, gen::P_LOOP_BARS, 4); p.run(0.05);                              // (LISTEN's test left it at 1)
+        CHECK(plainOf(p, gen::P_LOOP_FROM) == 1 && plainOf(p, gen::P_LOOP_TO) == 4);
+        wheel(p, gen::P_LOOP_FROM, 2); p.run(0.05);
+        std::printf("loop %d-%d (%d bars)\n", plainOf(p, gen::P_LOOP_FROM), plainOf(p, gen::P_LOOP_TO), plainOf(p, gen::P_LOOP_BARS));
+        CHECK(plainOf(p, gen::P_LOOP_FROM) == 3 && plainOf(p, gen::P_LOOP_TO) == 6 && plainOf(p, gen::P_LOOP_BARS) == 4);
+        wheel(p, gen::P_LOOP_TO, -4); p.run(0.05);
+        CHECK(plainOf(p, gen::P_LOOP_FROM) == 2 && plainOf(p, gen::P_LOOP_TO) == 2 && plainOf(p, gen::P_LOOP_BARS) == 1);
+        setPlain(p, gen::P_LOOP_FROM, 15); p.run(0.05);
+        setPlain(p, gen::P_LOOP_BARS, 4); p.run(0.05);
+        std::printf("loop at the end: %d-%d (%d bars)\n", plainOf(p, gen::P_LOOP_FROM), plainOf(p, gen::P_LOOP_TO), plainOf(p, gen::P_LOOP_BARS));
+        CHECK(plainOf(p, gen::P_LOOP_FROM) == 13 && plainOf(p, gen::P_LOOP_TO) == 16 && plainOf(p, gen::P_LOOP_BARS) == 4);
+        setPlain(p, gen::P_TEMPO, 100); p.run(0.05);
+        // Start = MPC Play: the MPC's playhead, moved while stopped, moves the practice position
+        p.e->setParameter(p.e, gen::P_START_MODE, 1.0f);
+        g_time.flags = kVstTempoValid | kVstPpqPosValid | kVstTimeSigValid; g_time.ppqPos = 0;
+        g_time.timeSigNumerator = 4; g_time.timeSigDenominator = 4;
+        p.run(0.1);
+        g_time.ppqPos = 8.0; p.run(0.1);                                            // bar 3
+        std::printf("mpc playhead at bar 3: bar %d, note %d\n", digits(p, gen::kD_d_bar, 3), plainOf(p, gen::P_GOTO_STEP));
+        CHECK(digits(p, gen::kD_d_bar, 3) == 3 && plainOf(p, gen::P_GOTO_STEP) == 9);
+        g_time.ppqPos = 9.0; p.run(0.1);                                            // a beat on
+        CHECK(plainOf(p, gen::P_GOTO_STEP) == 10);
+        g_time.ppqPos = 0.0; p.run(0.1);                                            // Stop twice: the start
+        CHECK(digits(p, gen::kD_d_bar, 3) == 1 && plainOf(p, gen::P_GOTO_STEP) == 1);
+        g_time.flags = kVstTempoValid; p.e->setParameter(p.e, gen::P_START_MODE, 0.0f); p.run(0.05);
+    }
+    // ---- 0.5.0: the LOAD list by data wheel; the piece list; Auto Next ---------------------------
+    {
+        CHECK(openFolder(p, "Queue"));
+        p.e->setParameter(p.e, gen::P_PICK0, 1.0f); p.waitWorker(0.3);
+        wheel(p, gen::P_SELECT, 1); p.waitWorker(0.3);
+        std::printf("select %d row %d, highlight %d %d\n", plainOf(p, gen::P_SELECT), plainOf(p, gen::P_ROW),
+                    p.frame(gen::kD_rowsel + 0, gen::kF_rowsel), p.frame(gen::kD_rowsel + 1, gen::kF_rowsel));
+        CHECK(plainOf(p, gen::P_SELECT) == 1 && plainOf(p, gen::P_ROW) == 1);
+        CHECK(p.frame(gen::kD_rowsel + 1, gen::kF_rowsel) == 1 && p.frame(gen::kD_rowsel + 0, gen::kF_rowsel) == 0);
+        CHECK(p.e->getParameter(p.e, gen::P_PICK0) < 0.5f);
+        p.e->setParameter(p.e, gen::P_LOAD, 1.0f); p.waitWorker(1.0);              // the wheel's push
+        std::string t = p.text(gen::kTextBase + gen::T_TITLE);
+        std::printf("title '%s'\n", t.c_str());
+        CHECK(t.find("b second") != std::string::npos && t.find("(2/3)") != std::string::npos);
+        // the piece list: open it, the wheel chooses, push loads
+        p.e->setParameter(p.e, gen::P_QPANEL, 1.0f); p.waitWorker(0.3);
+        std::printf("list: '%s' / '%s' / '%s'\n", p.text(gen::kTextBase + gen::T_QINFO).c_str(), p.text(gen::kTextBase + gen::T_Q0).c_str(),
+                    p.text(gen::kTextBase + gen::T_Q2).c_str());
+        CHECK(p.text(gen::kTextBase + gen::T_Q0).find("a first") != std::string::npos);
+        CHECK(p.frame(gen::kD_qsel + 1, gen::kF_qsel) == 2);
+        wheel(p, gen::P_PIECE, 1); p.waitWorker(0.3);
+        CHECK(p.frame(gen::kD_qsel + 2, gen::kF_qsel) == 2 && p.frame(gen::kD_qsel + 1, gen::kF_qsel) == 1);
+        writeState(p, std::string(argv[3]) + ".queue.state.json");                 // the list open, for the docs
+        p.e->setParameter(p.e, gen::P_PIECE_GO, 1.0f); p.waitWorker(1.0);
+        CHECK(p.text(gen::kTextBase + gen::T_TITLE).find("(3/3)") != std::string::npos);
+        CHECK(p.e->getParameter(p.e, gen::P_QPANEL) < 0.5f);                       // the list closed
+        p.e->setParameter(p.e, gen::P_QPICK0, 1.0f); p.waitWorker(1.0);             // a tap on its first row
+        CHECK(p.text(gen::kTextBase + gen::T_TITLE).find("(1/3)") != std::string::npos);
+        // play it through: two seconds later the next one loads by itself
+        p.run(0.2);
+        for (int n : drill) { p.block({{0x90, (uint8_t)n, 100}}); p.run(0.05); p.block({{0x80, (uint8_t)n, 0}}); p.run(0.05); }
+        p.run(2.5); p.waitWorker(1.0);
+        std::printf("after the piece: '%s'\n", p.text(gen::kTextBase + gen::T_TITLE).c_str());
+        CHECK(p.text(gen::kTextBase + gen::T_TITLE).find("b second  (2/3)") != std::string::npos);
+    }
+    // ---- 0.5.0: the playlist ----------------------------------------------------------------------
+    {
+        CHECK(openFolder(p, "Queue"));
+        p.e->setParameter(p.e, gen::P_PICK2, 1.0f); p.waitWorker(0.3);
+        CHECK(plainOf(p, gen::P_SELECT) == 2);
+        p.e->setParameter(p.e, gen::P_PL_ADD, 1.0f); p.waitWorker(0.5);
+        p.e->setParameter(p.e, gen::P_PICK0, 1.0f); p.waitWorker(0.3);
+        p.e->setParameter(p.e, gen::P_PL_ADD, 1.0f); p.waitWorker(0.5);
+        std::printf("playlist: '%s'\n", p.text(gen::kTextBase + gen::T_MESSAGE).c_str());
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("Added to Playlist (2") != std::string::npos);
+        CHECK(openFolder(p, "Playlist"));
+        CHECK(p.text(gen::kTextBase + gen::T_ROW0).find("c third") != std::string::npos);
+        CHECK(p.text(gen::kTextBase + gen::T_ROW1).find("a first") != std::string::npos);
+        p.e->setParameter(p.e, gen::P_PICK0, 1.0f); p.waitWorker(0.3);
+        p.e->setParameter(p.e, gen::P_LOAD, 1.0f); p.waitWorker(1.0);
+        CHECK(p.text(gen::kTextBase + gen::T_TITLE).find("c third  (1/2)") != std::string::npos);
+        p.e->setParameter(p.e, gen::P_PL_REMOVE, 1.0f); p.waitWorker(0.5);
+        CHECK(p.text(gen::kTextBase + gen::T_ROW0).find("a first") != std::string::npos);
+        std::vector<uint8_t> pl;
+        FILE* pf = std::fopen((std::string(argv[2]) + "/playlist.txt").c_str(), "rb");
+        CHECK(pf != nullptr);
+        if (pf) { int c; while ((c = std::fgetc(pf)) != EOF) pl.push_back((uint8_t)c); std::fclose(pf); }
+        std::string pls(pl.begin(), pl.end());
+        CHECK(pls.find("a_first.mid") != std::string::npos && pls.find("c_third.mid") == std::string::npos);
+        p.e->setParameter(p.e, gen::P_PL_REMOVE, 1.0f); p.waitWorker(0.5);
+        std::printf("after emptying it: folder '%s'\n", p.text(gen::kTextBase + gen::T_FOLDER_NAME).c_str());
+        CHECK(p.text(gen::kTextBase + gen::T_FOLDER_NAME).find("Playlist") == std::string::npos);
+    }
+    // ---- 0.5.0: notes beyond the staff under 8va / 8vb; TEST LIGHTS with nothing connected ---------
+    {
+        CHECK(openFolder(p, "Ottava"));
+        p.e->setParameter(p.e, gen::P_PICK0, 1.0f); p.waitWorker(0.3);
+        p.e->setParameter(p.e, gen::P_LOAD, 1.0f); p.waitWorker(1.0);
+        p.run(0.3);
+        int sign8va = mark(p, 0, 0), sign8vb = -1;
+        for (int sl = 0; sl < gen::kSlots; ++sl) if (mark(p, sl, gen::kRows - 1) == gen::kMarkOttavaBase + 2) { sign8vb = sl; break; }
+        std::printf("8va sign %d (want %d), 8vb sign in slot %d\n", sign8va, gen::kMarkOttavaBase, sign8vb);
+        CHECK(sign8va == gen::kMarkOttavaBase);
+        CHECK(sign8vb > 0);
+        CHECK(mark(p, 1, 0) == gen::kMarkOttavaBase + 1);                           // the line goes on over the bar
+        p.e->setParameter(p.e, gen::P_LINN_TEST, 1.0f); p.waitWorker(1.5);
+        std::printf("test lights: '%s'\n", p.text(gen::kTextBase + gen::T_MESSAGE).c_str());
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("nothing connected") != std::string::npos);
+        CHECK(p.e->getParameter(p.e, gen::P_LINN_TEST) < 0.5f);
     }
     std::printf("automate %d updateDisplay %d\n", g_automate, g_updates);
     p.d(effMainsChanged, 0, 0); p.d(effClose);

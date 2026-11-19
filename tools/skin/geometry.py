@@ -244,6 +244,10 @@ PALETTE = [("Off", None)] + [(n, _LS[n]) for n in ("Red", "Yellow", "Green", "Cy
     # scheme now darkens instead: D# is a deeper blue than D. Appended, so saved choices keep
     # their meaning.
     ("Navy", (22, 30, 150)),
+    # 0.5.0: F# in-between magenta and white (Orchid) sat too close to E's pink and F's magenta.
+    # A light salmon pink instead: warmer and paler than E, paler than B's orange, the green
+    # channel a touch above the blue, well away from the creams and yellows of G# to A#.
+    ("Salmon", (255, 150, 135)),
 ]
 PALETTE_NAMES = [n for n, _ in PALETTE]
 def _pal(n):
@@ -251,7 +255,7 @@ def _pal(n):
 # (param id suffix, name shown, default palette index) for C .. B
 NOTE_COLOUR_DEFAULTS = [
     ("c", "C", _pal("Cyan")), ("cs", "C#", _pal("Azure")), ("d", "D", _pal("Blue")), ("ds", "D#", _pal("Navy")),
-    ("e", "E", _pal("Pink")), ("f", "F", _pal("Magenta")), ("fs", "F#", _pal("Orchid")), ("g", "G", _pal("White")),
+    ("e", "E", _pal("Pink")), ("f", "F", _pal("Magenta")), ("fs", "F#", _pal("Salmon")), ("g", "G", _pal("White")),
     ("gs", "G#", _pal("Cream")), ("a", "A", _pal("Yellow")), ("as", "A#", _pal("Amber")), ("b", "B", _pal("Orange")),
 ]
 SWATCH_FRAMES = len(PALETTE)
@@ -274,7 +278,10 @@ CLICK_TYPES = ["Tick", "Wood", "Beep"]
 #           columns already passed (marks sit above the played-note fade)
 #   ghost:  a red head where a wrong note was played, with its accidental, on a ledger line or not
 #   gledger: a red ledger line alone (between the staff and a ghost)
-MARK_EMPTY, MARK_DOT, MARK_TINT, MARK_GHOST, MARK_GLEDGER = range(5)
+#   ottava: 8va / 8vb / 15ma / 15mb where notes beyond the grid are drawn an octave or two closer
+#           (0.5.0), the sign at the start of a run and dashes after it
+MARK_EMPTY, MARK_DOT, MARK_TINT, MARK_GHOST, MARK_GLEDGER, MARK_OTTAVA = range(6)
+OTTAVA_SIGNS = ["8va", "8vb", "15ma", "15mb"]   # sign codes 1..4
 NUM_DOT_COLOURS = len(PALETTE) - 1
 def _mark_frames():
     f = [(MARK_EMPTY, 0, 0, 0, 0)]
@@ -293,14 +300,19 @@ def _mark_frames():
                 f.append((MARK_GHOST, trail, 0, ledger, acc))
     for trail in (0, 1):
         f.append((MARK_GLEDGER, trail, 0, 0, 0))
+    for sign in range(1, len(OTTAVA_SIGNS) + 1):
+        for cont in (0, 1):
+            f.append((MARK_OTTAVA, 0, 0, sign, cont))
     return f
 MARK_FRAMES = _mark_frames()
 MARK_DOT_BASE = 1
 MARK_TINT_BASE = MARK_DOT_BASE + 2 * 3 * NUM_DOT_COLOURS
 MARK_GHOST_BASE = MARK_TINT_BASE + 2 * 2 * 3 * 2
 MARK_GLEDGER_BASE = MARK_GHOST_BASE + 2 * 2 * 4
+MARK_OTTAVA_BASE = MARK_GLEDGER_BASE + 2
 assert MARK_FRAMES[MARK_TINT_BASE][0] == MARK_TINT and MARK_FRAMES[MARK_GHOST_BASE][0] == MARK_GHOST
-assert MARK_FRAMES[MARK_GLEDGER_BASE][0] == MARK_GLEDGER and len(MARK_FRAMES) == MARK_GLEDGER_BASE + 2
+assert MARK_FRAMES[MARK_GLEDGER_BASE][0] == MARK_GLEDGER and MARK_FRAMES[MARK_OTTAVA_BASE][0] == MARK_OTTAVA
+assert len(MARK_FRAMES) == MARK_OTTAVA_BASE + 2 * len(OTTAVA_SIGNS)
 
 # ---------------------------------------------------------------------------------------------
 # C++ header
@@ -344,10 +356,11 @@ def write_cpp_header(path):
     w("// Marks: dot = kMarkDotBase + (place*3 + head)*kDotColours + colour-1 (head 0 black, 1 half, 2 whole);")
     w("// tint = kMarkTintBase + ((trail*2 + place)*3 + head)*2 + tint-1 (1 green, 2 red);")
     w("// ghost = kMarkGhostBase + (trail*2 + ledger)*4 + acc (0 none, 1 sharp, 2 flat, 3 natural);")
-    w("// ghost ledger line = kMarkGLedgerBase + trail.")
+    w("// ghost ledger line = kMarkGLedgerBase + trail; ottava = kMarkOttavaBase + (sign-1)*2 + continuation")
+    w("// (sign 1 8va, 2 8vb, 3 15ma, 4 15mb).")
     w("constexpr int kMarkFrames = %d, kDotColours = %d;" % (len(MARK_FRAMES), NUM_DOT_COLOURS))
-    w("constexpr int kMarkDotBase = %d, kMarkTintBase = %d, kMarkGhostBase = %d, kMarkGLedgerBase = %d;" %
-      (MARK_DOT_BASE, MARK_TINT_BASE, MARK_GHOST_BASE, MARK_GLEDGER_BASE))
+    w("constexpr int kMarkDotBase = %d, kMarkTintBase = %d, kMarkGhostBase = %d, kMarkGLedgerBase = %d, kMarkOttavaBase = %d;" %
+      (MARK_DOT_BASE, MARK_TINT_BASE, MARK_GHOST_BASE, MARK_GLEDGER_BASE, MARK_OTTAVA_BASE))
     w("constexpr int kSwatchFrames = %d;" % SWATCH_FRAMES)
     w("}} // namespace sr::gen")
     with open(path, "w") as f:

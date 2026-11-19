@@ -136,6 +136,28 @@ def container(children, bg="0", actions=(), version=2):
 def action(on, handler, handle="Data", extra=""):
     return o(("version", 1), ("onAction", on), ("handler", handler), ("handleName", handle), ("additionalData", extra))
 
+def touch_area(name, typ, x, y, w, h, remap=(), invalid=None, focus="Yes"):
+    """An entry of a custom component type (an empty container whose actions do the work) laid
+    over pictures and labels drawn underneath."""
+    return entry(name, typ, o(("version", 1), ("handleName", "Data")), bounds(x, y, w, h, focus=focus, invalid=invalid), list(remap))
+
+def focus_box(th, actions):
+    """An empty container that tints itself while it has hardware focus (0.5.0 fields)."""
+    c = container([], actions=actions)
+    tint = argb(R.THEMES[th.name]["hi"], 60)
+    bg = o(("version", 1), ("focussed", o(("version", 1), ("colour", tint), ("image", ""))),
+           ("unfocussed", o(("version", 1), ("colour", "0"), ("image", ""))))
+    return O([(k, bg if k == "backgroundData" else v) for k, v in c])
+
+_sel_cache = {}
+def select_images(th, w, h, n):
+    key = (th.name, w, h, n)
+    if key not in _sel_cache:
+        fn = "%s_sel%d_%dx%d.png" % (th.name, n, w, h)
+        R.select_strip(th.name, w, h, n).save(os.path.join(SKINS, fn), optimize=True)
+        _sel_cache[key] = fn
+    return _sel_cache[key]
+
 OVERLAY_ACTIONS = [o(("version", 1), ("onAction", "Focus Lost"), ("handler", "Focus Lost"), ("handleName", "Focus Lost"), ("additionalData", ""))]
 
 def overlay_defs():
@@ -270,6 +292,12 @@ def seg_images(th, w, h, style):
 
 COLS_X = [16, 332, 648, 964]
 
+def name_width(pid):
+    """Width of a control's name as the slot draws it (15 px SemiBold, upper case)."""
+    from PIL import ImageFont
+    f = ImageFont.truetype(os.path.join(HERE, "skin", "fonts", "TitilliumWeb-SemiBold.ttf"), 15)
+    return int(f.getlength(next(c for c in PR.CONTROL if c[0] == pid)[1].upper()))
+
 def grid_page(th, layout, top=20, row_h=150, extra=(), short=False):
     """layout: up to 4 rows of 4 (pid, kind) or None. Returns (children, local defs, q-link map).
     Each control gets its readout underneath (one line when short, else up to two)."""
@@ -287,7 +315,8 @@ def grid_page(th, layout, top=20, row_h=150, extra=(), short=False):
                 # short: on the name line, right of the name; else under the control. Either way
                 # inside the row's Q-Link rectangle.
                 if short:
-                    ents = ents + readout(th, pid, COLS_X[c] + 80, top + r * row_h + 2, SLOT_W - 90, True)
+                    nx = max(80, name_width(pid) + 22)
+                    ents = ents + readout(th, pid, COLS_X[c] + nx, top + r * row_h + 2, SLOT_W - nx - 10, True)
                 else:
                     ents = ents + readout(th, pid, COLS_X[c] + 10, top + r * row_h + 98, SLOT_W - 20)
             kids.extend(ents)
@@ -364,51 +393,97 @@ def play_page(th):
     # tap the music to start / pause (on top, so it gets the touch)
     kids.append(entry("tap", "%s_tap" % th.name, o(("version", 1), ("handleName", "Data")), bounds(G.SLOTS_X0, G.GRID_TOP, G.SLOTS * G.SLOT_W, G.GRID_BOTTOM - G.GRID_TOP),
                       [("Data", P("play"))]))
-    # header
-    kids.append(label("title", "Value", P("text_title"), 16, 2, 490, 34, 25, th.text, "left verticallyCentred", "SemiBold"))
-    kids.append(label("msg", "Value", P("text_message"), 16, 34, 490, 24, 16, th.dim))
+    # header. The title is the piece list's handle (0.5.0): tap it to open the list of the
+    # folder or Playlist the piece came from, turn the data wheel to choose, push it to load.
+    kids.append(picture("chevron", img["chevron"][0], 14, 14, 16, 12))
+    kids.append(label("title", "Value", P("text_title"), 36, 2, 450, 34, 25, th.text, "left verticallyCentred", "SemiBold"))
+    kids.append(label("msg", "Value", P("text_message"), 16, 34, 470, 24, 16, th.dim))
     st = img["status"]
-    kids.append(strip("status", st[0], st[1], P("_status"), 514, 2, R.STATUS_W, R.STATUS_H))
+    kids.append(strip("status", st[0], st[1], P("_status"), 494, 2, R.STATUS_W, R.STATUS_H))
     hd = img["hand"]
-    kids.append(strip("hand", hd[0], hd[1], P("_handicon"), 554, 37, R.HAND_W, R.HAND_H))
+    kids.append(strip("hand", hd[0], hd[1], P("_handicon"), 494 + (R.STATUS_W - R.HAND_W) // 2, 37, R.HAND_W, R.HAND_H))
     dg = img["digits"]
     def digits(group, n, x, y, cap):
-        kids.append(label(group + "_cap", "Text", "Invalid", x, y - 18, 80, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", cap))
+        kids.append(label(group + "_cap", "Text", "Invalid", x, y - 18, n * R.DIGIT_W + 4, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", cap))
         for i in range(n):
             kids.append(strip(group, dg[0], dg[1], "Parameter %d" % (IDX["_" + group] + i), x + i * R.DIGIT_W, y, R.DIGIT_W, R.DIGIT_H))
-    digits("d_bar", 3, 678, 24, "Bar")
-    kids.append(label("slash", "Text", "Invalid", 678 + 3 * R.DIGIT_W, 24, 14, 30, 22, th.dim, "horizontallyCentred verticallyCentred", "Regular", text="/"))
+    # [status] | Bar Note | Acc Miss | BPM | Next R Next L Played  R L
+    BAR_X, NOTE_X, ACC_X, ERR_X, BPM_X = 632, 762, 822, 884, 948
+    for rx in (625, 755, 815, 941, 1006):
+        kids.append(picture("rule%d" % rx, img["vrule"][0], rx, 10, 1, 40))
+    digits("d_bar", 3, BAR_X, 24, "Bar")
+    kids.append(label("slash", "Text", "Invalid", BAR_X + 3 * R.DIGIT_W, 24, 14, 30, 22, th.dim, "horizontallyCentred verticallyCentred", "Regular", text="/"))
     for i in range(3):
-        kids.append(strip("d_bars", dg[0], dg[1], "Parameter %d" % (IDX["_d_bars"] + i), 678 + 3 * R.DIGIT_W + 14 + i * R.DIGIT_W, 24, R.DIGIT_W, R.DIGIT_H))
-    digits("d_acc", 3, 802, 24, "Acc %")
-    digits("d_err", 3, 870, 24, "Miss")
-    digits("d_bpm", 3, 938, 24, "BPM")
+        kids.append(strip("d_bars", dg[0], dg[1], "Parameter %d" % (IDX["_d_bars"] + i), BAR_X + 3 * R.DIGIT_W + 14 + i * R.DIGIT_W, 24, R.DIGIT_W, R.DIGIT_H))
+    kids.append(label("note_cap", "Text", "Invalid", NOTE_X, 6, 64, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Note"))
+    kids.append(label("note_val", "Value", P("goto_step"), NOTE_X, 22, 48, 34, 26, th.text, "left verticallyCentred", "SemiBold"))
+    digits("d_acc", 3, ACC_X, 24, "Acc %")
+    digits("d_err", 3, ERR_X, 24, "Miss")
+    digits("d_bpm", 3, BPM_X, 24, "BPM")
     nn = img["notename"]
-    kids.append(label("next_cap", "Text", "Invalid", 1000, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next R"))
-    kids.append(strip("next", nn[0], nn[1], P("_nextname"), 1000, 24, R.NOTE_W, R.NOTE_H))
-    kids.append(label("nextl_cap", "Text", "Invalid", 1072, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next L"))
-    kids.append(strip("nextl", nn[0], nn[1], P("_nextname_lh"), 1072, 24, R.NOTE_W, R.NOTE_H))
+    NR_X, NL_X, PL_X, FG_X = 1012, 1074, 1136, 1210
+    kids.append(label("next_cap", "Text", "Invalid", NR_X, 6, R.NOTE_W, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next R"))
+    kids.append(strip("next", nn[0], nn[1], P("_nextname"), NR_X, 24, R.NOTE_W, R.NOTE_H))
+    kids.append(label("nextl_cap", "Text", "Invalid", NL_X, 6, R.NOTE_W, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Next L"))
+    kids.append(strip("nextl", nn[0], nn[1], P("_nextname_lh"), NL_X, 24, R.NOTE_W, R.NOTE_H))
     pn = img["notename_played"]
-    kids.append(label("played_cap", "Text", "Invalid", 1146, 6, 70, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Played"))
-    kids.append(strip("played", pn[0], pn[1], P("_playedname"), 1146, 24, R.NOTE_W, R.NOTE_H))
+    kids.append(label("played_cap", "Text", "Invalid", PL_X, 6, R.NOTE_W, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Played"))
+    kids.append(strip("played", pn[0], pn[1], P("_playedname"), PL_X, 24, R.NOTE_W, R.NOTE_H))
     fg = img["finger"]
-    kids.append(label("fing_cap", "Text", "Invalid", 1220, 6, 60, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "R  L"))
-    kids.append(strip("fr", fg[0], fg[1], "Parameter %d" % IDX["_finger"], 1220, 24, R.FINGER_W, R.FINGER_H))
-    kids.append(strip("fl", fg[0], fg[1], "Parameter %d" % (IDX["_finger"] + 1), 1246, 24, R.FINGER_W, R.FINGER_H))
+    kids.append(label("fing_cap", "Text", "Invalid", FG_X, 6, 60, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "R  L"))
+    kids.append(strip("fr", fg[0], fg[1], "Parameter %d" % IDX["_finger"], FG_X, 24, R.FINGER_W, R.FINGER_H))
+    kids.append(strip("fl", fg[0], fg[1], "Parameter %d" % (IDX["_finger"] + 1), FG_X + 26, 24, R.FINGER_W, R.FINGER_H))
     kids.append(colourbar("progress", P("_progress"), 0, 60, G.TAB_W, 4, th.line, th.hi))
+    defs = {}
+    # Bar, Note, BPM: tap to give the data wheel to it (and its Q-Link bank), double-tap or push
+    # the wheel for the big knob
+    defs["%s_hfield" % th.name] = focus_box(th, [action("Mouse Down", "Q-Link"), action("Double Click", "Show Overlay", "Data", "knob overlay"),
+                                                action("Enter Pressed", "Show Overlay", "Data", "knob overlay")])
+    hfields = [("hf_bar", "goto_bar", BAR_X - 3, 3 * R.DIGIT_W * 2 + 14 + 6), ("hf_note", "goto_step", NOTE_X - 3, 50),
+               ("hf_bpm", "bpm", BPM_X - 3, 3 * R.DIGIT_W + 6)]
+    for name, pid, x, w in hfields:
+        kids.append(touch_area(name, "%s_hfield" % th.name, x, 3, w, 55, [("Data", P(pid))]))
+    play_page.hfield_rect = rect(BAR_X - 5, 1, BPM_X + 3 * R.DIGIT_W + 5 - (BAR_X - 5), 57)
+    # the title: tap opens or closes the piece list; the data wheel chooses; push loads
+    defs["%s_titlebox" % th.name] = focus_box(th, [action("Mouse Down", "Toggle Switch", P("qpanel")),
+                                                   action("Enter Pressed", "Toggle Switch", P("piece_go"))])
+    kids.append(touch_area("titlebox", "%s_titlebox" % th.name, 8, 1, 482, 57, [("Data", P("piece"))]))
     # footer: two rows of controls
     layout = [
         [("mode", "switch"), ("tempo", "knob"), ("hands", "switch"), ("view", "menu")],
-        [("play", "toggle"), (("listen", "restart"), "pair"), ("loop", "toggle"), ("loop_from", "knob")],
+        [(("play", "listen"), "pair"), (("restart", "loop"), "pair"), ("loop_from", "knob"), ("loop_to", "knob")],
     ]
-    fk, defs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118, short=True)
+    fk, fdefs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118, short=True)
+    defs.update(fdefs)
     kids.extend(fk)
-    # the lower two knob rows have no on-screen controls on this page
-    for q, pid in zip([5, 6, 7, 8], ["loop_bars", "timing", "pitch_tol", "chord_tol"]):
+    rects = list(grid_page.last_rects)
+    # the third knob row works the header fields (its rectangle is drawn round them); the fourth
+    # has no on-screen controls on this page
+    for q, pid in zip([5, 6, 7, 8], ["goto_bar", "goto_step", "bpm", "loop_bars"]):
         qmap[q] = IDX[pid]
-    for q, pid in zip([1, 2, 3, 4], ["snd_vol", "metro", "count_in", "mask"]):
+    rects[2] = play_page.hfield_rect
+    for q, pid in zip([1, 2, 3, 4], ["timing", "pitch_tol", "chord_tol", "snd_vol"]):
         qmap[q] = IDX[pid]
-    return kids, defs, qmap, grid_page.last_rects
+    # the piece list, over everything (shown while Piece List is on)
+    # (kept above the footer's knob groups: G.FOOTER_Y)
+    qx, qy, qw, rh = 12, 64, 720, 34
+    qh = 34 + 8 * rh + 6
+    assert qy + qh < G.FOOTER_Y - 8
+    pk = [label("qinfo", "Value", P("text_qinfo"), 14, 2, qw - 28, 32, 16, th.dim, "left verticallyCentred", "SemiBold")]
+    sel = select_images(th, qw - 16, rh - 4, 3)
+    for r in range(8):
+        y = 34 + r * rh
+        pk.append(strip("qsel%d" % r, sel, 3, "Parameter %d" % (IDX["_qsel"] + r), 8, y + 2, qw - 16, rh - 4))
+        pk.append(label("q%d" % r, "Value", P("text_q%d" % r), 22, y, qw - 40, rh, 19, th.text, "left verticallyCentred", "Regular"))
+        defs["%s_qrow%d" % (th.name, r)] = container([], actions=[action("Mouse Down", "Toggle Switch", P("qpick%d" % r))])
+        pk.append(touch_area("qrow%d" % r, "%s_qrow%d" % (th.name, r), 8, y, qw - 16, rh, focus="No"))
+    defs["%s_qpanel" % th.name] = container(pk, bg=argb(R.THEMES[th.name]["panel"]))
+    kids.append(entry("qpanel", "%s_qpanel" % th.name, o(("version", 1), ("handleName", "Data")),
+                      O([("version", 2), ("acceptsHWFocus", "Children"), ("showWhenDataModelInvalid", "Hide"), ("whenVisible", "Always"),
+                         ("boundsType", "Absolute"), ("bounds", rect(qx, qy, qw, qh)),
+                         ("additionalInvalidatingHandles", ["IndexedEnabling/1/2/%s" % P("qpanel")])]),
+                      [("Data", P("qpanel"))]))
+    return kids, defs, qmap, rects
 
 def load_page(th):
     kids = []
@@ -422,23 +497,29 @@ def load_page(th):
         group.extend(ents)
         if comp is not None:
             defs["%s_slot_%s" % (row[0][1], th.name)] = comp
-    # the list
+    # the list (0.5.0): the data wheel moves the selection through the whole folder, pushing it
+    # (or a double tap) loads; a tap selects that row
     x0, y0, w, h = 324, 14, 640, 58
+    sel = select_images(th, w, h - 4, 2)
     for r in range(8):
+        kids.append(strip("rowsel%d" % r, sel, 2, "Parameter %d" % (IDX["_rowsel"] + r), x0, y0 + r * h + 2, w, h - 4))
         kids.append(label("row%d" % r, "Value", P("text_row%d" % r), x0 + 14, y0 + r * h, w - 20, h, 21, th.text, "left verticallyCentred", "Regular"))
-    on, off = seg_images(th, w, h - 4, "row")
     for r in range(8):
-        kids.append(button("rowbtn%d" % r, on, off, P("row"), r, 8, x0, y0 + r * h + 2, w, h - 4, focus="Yes"))
+        defs["%s_lrow%d" % (th.name, r)] = container([], actions=[action("Mouse Down", "Toggle Switch", P("pick%d" % r)),
+                                                                   action("Double Click", "Toggle Switch", P("load")),
+                                                                   action("Enter Pressed", "Toggle Switch", P("load"))])
+        kids.append(touch_area("lrow%d" % r, "%s_lrow%d" % (th.name, r), x0, y0 + r * h, w, h, [("Data", P("select"))]))
     # details and actions
     for i in range(4):
         kids.append(label("info%d" % i, "Value", P("text_info%d" % i), 980, 14 + i * 40, 290, 40, 18 if i else 21, th.text if i == 0 else th.dim, "left verticallyCentred", "SemiBold" if i == 0 else "Regular"))
-    for pid, yy in (("load", 200), ("rescan", 320)):
+    for pid, yy in (("load", 186), ("pl_add", 274), ("pl_remove", 362), ("rescan", 450)):
         ents, _ = control_slot(th, pid, 976, yy, "button")
         kids.extend(ents)
-    kids.append(label("msg", "Value", P("text_message"), 324, 486, 640, 30, 17, th.dim))
-    kids.extend(paragraph("hint", "Tap a row, then LOAD. Q-Links: folder, scroll, row, sort. Your own files go in "
-                          "SightReader/Library/<folder>/ on this drive; tools/library.py fills it over SSH. Press RESCAN after copying.", 324, 520, 940, 15, th.dim))
-    qmap = {13: IDX["folder"], 14: IDX["scroll"], 15: IDX["row"], 16: IDX["sort"]}
+    kids.append(label("msg", "Value", P("text_message"), 324, 482, 640, 30, 17, th.dim))
+    kids.extend(paragraph("hint", "Turn the data wheel on the list and push it to load, or tap a file and LOAD. The folder "
+                          "becomes PLAY's piece list (tap the title there). ADD TO LIST builds the Playlist, the last folder. "
+                          "Your own files: SightReader/Library/<folder>/, then RESCAN.", 324, 514, 640, 15, th.dim, 20))
+    qmap = {13: IDX["folder"], 14: IDX["scroll"], 15: IDX["select"], 16: IDX["sort"]}
     return kids, defs, qmap, fit_rects([group])
 
 def gen_page(th):
@@ -466,7 +547,7 @@ def more_page(th):
     layout = [
         [("range_lo", "knob"), ("range_hi", "knob"), ("out_range", "switch"), ("mask", "switch")],
         [("names", "switch"), ("split", "knob"), ("transpose", "knob"), ("loop_bars", "knob")],
-        [("ramp", "menu"), ("goal", "knob"), None, None],
+        [("ramp", "menu"), ("goal", "knob"), ("auto_next", "switch"), ("loop_to", "knob")],
         [("listen_at", "menu"), ("listen_hands", "switch"), ("accomp", "switch"), ("out_ch", "knob")],
     ]
     kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
@@ -503,18 +584,34 @@ def color_page(th):
 
 def linn_page(th):
     layout = [
-        [("linn", "switch"), ("linn_guide", "menu"), ("linn_gcol", "menu"), ("linn_finger", "switch")],
-        [("linn_sect", "button"), ("linn_scol", "menu"), ("linn_clear", "button"), ("linn_key", "menu")],
-        [("linn_kcol", "menu"), ("linn_sync", "button"), ("linn_size", "switch"), ("linn_rowoff", "menu")],
-        [("linn_low", "knob"), ("linn_ch", "knob"), ("linn_left", "switch"), None],
+        [("linn", "switch"), ("linn_port", "switch"), ("linn_test", "button"), None],
+        [("linn_guide", "menu"), ("linn_gcol", "menu"), ("linn_finger", "switch"), ("linn_ch", "knob")],
+        [("linn_sect", "button"), ("linn_scol", "menu"), ("linn_clear", "button"), ("linn_restore", "switch")],
+        [("linn_key", "menu"), ("linn_kcol", "menu"), ("linn_sync", "button"), None],
     ]
     kids, defs, qmap = grid_page(th, layout, top=6, row_h=150)
     ls = th.img["linnstate"]
-    x0, y0 = COLS_X[3] + 10, 6 + 3 * 150
+    x0, y0 = COLS_X[3] + 10, 6
     kids.append(label("linn_cap", "Text", "Invalid", x0, y0 + 2, SLOT_W - 20, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Status"))
     kids.append(strip("linnstate", ls[0], ls[1], P("_linnstate"), x0, y0 + 28, R.LINNSTATE_W, R.LINNSTATE_H))
-    kids.append(label("linn_status", "Value", P("text_linn_status"), x0, y0 + 58, SLOT_W - 20, 26, 15, th.dim))
-    kids.append(label("mpc_key", "Value", P("text_mpc_key"), x0, y0 + 86, SLOT_W - 20, 26, 15, th.text))
+    kids.append(label("linn_status", "Value", P("text_linn_status"), x0, y0 + 58, SLOT_W - 20, 52, 15, th.dim))
+    y3 = 6 + 3 * 150
+    kids.append(label("key_cap", "Text", "Invalid", x0, y3 + 2, SLOT_W - 20, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "MPC project"))
+    kids.append(label("mpc_key", "Value", P("text_mpc_key"), x0, y3 + 30, SLOT_W - 20, 26, 15, th.text))
+    return kids, defs, qmap, grid_page.last_rects
+
+def linn_layout_page(th):
+    """LINN's second page (press LINN again): what the plugin needs to know about the instrument."""
+    layout = [
+        [("linn_size", "switch"), ("linn_rowoff", "menu"), ("linn_low", "knob"), ("linn_left", "switch")],
+    ]
+    kids, defs, qmap = grid_page(th, layout, top=6, row_h=150)
+    kids.extend(paragraph("help", "These must match the LinnStrument so a light lands on the right cell: its size, its Row "
+                          "Offset (Global Settings), the note of the bottom-left cell (F#1 by default; it moves with the "
+                          "Octave and Transpose settings) and Left-Handed. Played-colour highlights also need Linn Ch to be a "
+                          "channel the instrument plays on: in MPE mode a per-note channel (2-16), in One Channel mode that channel. "
+                          "To use the MIDI jacks instead of USB, set the LinnStrument's MIDI I/O to MIDI Jacks and LINN's Linn Port "
+                          "to MPC Out A or B.", 16, 170, 1248, 17, th.dim, 24))
     return kids, defs, qmap, grid_page.last_rects
 
 def stats_page(th):
@@ -538,11 +635,13 @@ def stats_page(th):
         kids.append(label("stats%d" % i, "Value", P("text_stats%d" % i), 16, 392 + i * 34, 1248, 32, 18, th.text if i < 2 else th.dim))
     return kids, {}, {}, [rect(0, 0, 0, 0)] * 4
 
-# (tab name per theme, builder, themes). Only PLAY has a Day version: every extra tab shows on the
-# MPC as its own button, and the settings pages read fine in the MPC's own dark style.
-PAGES = [(("PLAY", "LIGHT"), play_page, ["night", "day"]), (("LOAD",), load_page, ["night"]), (("GEN",), gen_page, ["night"]),
-         (("SETUP",), setup_page, ["night"]), (("MORE",), more_page, ["night"]), (("SOUND",), sound_page, ["night"]),
-         (("COLOR",), color_page, ["night"]), (("LINN",), linn_page, ["night"]), (("STATS",), stats_page, ["night"])]
+# One list per function key: its sub-tabs (press the key again), each (tab name, builder, theme).
+# Only PLAY has a Day version: every sub-tab shows on the MPC as its own button, and the settings
+# pages read fine in the MPC's own dark style.
+PAGES = [[("PLAY", play_page, "night"), ("LIGHT", play_page, "day")], [("LOAD", load_page, "night")], [("GEN", gen_page, "night")],
+         [("SETUP", setup_page, "night")], [("MORE", more_page, "night")], [("SOUND", sound_page, "night")],
+         [("COLOR", color_page, "night")], [("LINN", linn_page, "night"), ("LAYOUT", linn_layout_page, "night")],
+         [("STATS", stats_page, "night")]]
 THEME_ORDER = ["night", "day"]
 
 # ---------------------------------------------------------------------------------------------
@@ -564,10 +663,9 @@ def main():
     local = overlay_defs()
     defs_all = {}
     tabs, qentries = [], []
-    for ti, (names, builder, page_themes) in enumerate(PAGES):
-        for si, thname in enumerate(page_themes):
+    for ti, subs in enumerate(PAGES):
+        for si, (tname, builder, thname) in enumerate(subs):
             th = themes[thname]
-            tname = names[min(si, len(names) - 1)]
             kids, defs, qmap, rects = builder(th)
             defs_all.update(defs)
             if builder is play_page:

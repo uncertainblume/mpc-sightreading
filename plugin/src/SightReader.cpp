@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 400;   // 0.4.0
+constexpr int kVersion = 500;   // 0.5.0
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -257,7 +257,8 @@ public:
         }
         static const char* textNames[gen::kNumTexts] = {"Title", "Folder", "Row 1", "Row 2", "Row 3", "Row 4", "Row 5", "Row 6", "Row 7", "Row 8",
                                                          "Info 1", "Info 2", "Info 3", "Info 4", "Message", "Stats 1", "Stats 2", "Stats 3", "Stats 4",
-                                                         "Linn", "MPC Key", "Exercise"};
+                                                         "Linn", "MPC Key", "Exercise",
+                                                         "Queue 1", "Queue 2", "Queue 3", "Queue 4", "Queue 5", "Queue 6", "Queue 7", "Queue 8", "Queue"};
         for (int i = 0; i < gen::kNumTexts; ++i)
         {
             char id[16]; std::snprintf(id, sizeof(id), "t%d", i);
@@ -282,7 +283,8 @@ public:
         texts_[gen::T_TITLE] = "Sight Reader";
         texts_[gen::T_MESSAGE] = "LOAD a piece or GEN an exercise";
         places_.locate(mpc::pluginFolder());
-        for (int i = 0; i < gen::kNumControls; ++i) { lastInt_[i] = -1; lastNorm_[i] = 0.0f; }
+        // the data wheel's first click steps from the default (not from nothing: 0.4.0 jumped)
+        for (int i = 0; i < gen::kNumControls; ++i) { lastInt_[i] = (int)std::lround(get(i)); lastNorm_[i] = getNormalised(i); }
         worker_ = std::thread([this] { workerLoop(); });
     }
 
@@ -332,22 +334,85 @@ public:
             case gen::P_COL_RESET: if (plain >= 0.5f) trig_colreset_.store(true); break;
             case gen::P_FOLDER: case gen::P_SCROLL: case gen::P_SORT: case gen::P_ROW:
                 if (index != gen::P_ROW) nudge(index);
-                listDirty_.store(true); wake(); break;
-            case gen::P_LOOP_FROM: nudge(index); break;
+                listSrc_.store(1); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
+            case gen::P_SELECT: nudge(index); listSrc_.store(2); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
+            case gen::P_LOOP_FROM: case gen::P_LOOP_TO: case gen::P_LOOP_BARS: nudge(index); if (!loadingState_.load()) loopRule(index); break;
+            case gen::P_GOTO_BAR: case gen::P_GOTO_STEP:
+                nudge(index); if (!loadingState_.load()) locateReq_.store(index == gen::P_GOTO_BAR ? 1 : 2); break;
+            case gen::P_BPM: nudge(index); bpmAuthority_.store(true); break;
+            case gen::P_TEMPO: bpmAuthority_.store(false); break;
+            case gen::P_PIECE: nudge(index); pieceSel_.store(true); wake(); break;
+            case gen::P_PIECE_GO: if (plain >= 0.5f) { trig_piecego_.store(true); wake(); } break;
+            case gen::P_PL_ADD: if (plain >= 0.5f) { trig_pladd_.store(true); wake(); } break;
+            case gen::P_PL_REMOVE: if (plain >= 0.5f) { trig_plremove_.store(true); wake(); } break;
+            case gen::P_LINN_PORT: trig_linnscan_.store(true); wake(); break;
+            case gen::P_LINN_TEST: if (plain >= 0.5f) { trig_linntest_.store(true); trig_linnscan_.store(true); wake(); } break;
+            case gen::P_QPANEL: if (plain >= 0.5f) { qpanelOpened_.store(true); wake(); } break;
             case gen::P_TRANSPOSE: case gen::P_SPLIT: case gen::P_OUT_RANGE: case gen::P_RANGE_LO: case gen::P_RANGE_HI:
                 if (index == gen::P_TRANSPOSE || index == gen::P_SPLIT || (int)get(gen::P_OUT_RANGE) == 2) { trig_rebuild_.store(true); wake(); }
                 break;
             case gen::P_LINN_SIZE: case gen::P_LINN_ROWOFF: case gen::P_LINN_LOW: case gen::P_LINN_LEFT:
                 trig_rebuild_.store(true); layoutChanged_.store(true); wake(); break;
-            case gen::P_LINN: case gen::P_LINN_KEY: trig_keyread_.store(true); wake(); break;
-            default: break;
+            case gen::P_LINN: case gen::P_LINN_KEY: trig_keyread_.store(true); trig_linnscan_.store(true); wake(); break;
+            default:
+                if (index >= gen::P_PICK0 && index <= gen::P_PICK7 && plain >= 0.5f) { pick_.store(index - gen::P_PICK0); listDirty_.store(true); wake(); }
+                else if (index >= gen::P_QPICK0 && index <= gen::P_QPICK7 && plain >= 0.5f) { qpick_.store(index - gen::P_QPICK0); wake(); }
+                break;
         }
+    }
+
+    // The entry point marks a state load (effSetChunk), during which values are restored as saved.
+    void setLoadingState(bool on) { loadingState_.store(on); }
+    std::mutex& stateMutex() { return stateMx_; }
+    // Writes one of our own parameters from inside the plugin, keeping nudge()'s memory in step
+    // so the next data-wheel move goes on from the value shown.
+    void setTracked(int index, float plain)
+    {
+        inParamChange_ = true;
+        set(index, plain);
+        inParamChange_ = false;
+        lastInt_[index] = (int)std::lround(get(index));
+        lastNorm_[index] = getNormalised(index);
+        needNotify_[index].store(true);
+    }
+
+    // Loop From, Loop To and Loop Bars follow each other: moving From keeps the length, moving
+    // To keeps the start (and pulls From back when To passes it), Bars stretches from From.
+    // All stay inside the piece.
+    void loopRule(int changed)
+    {
+        int first = std::max(1, firstBar_.load()), last = std::max(first, lastBar_.load());
+        const int maxBars = (int)gen::kControls[gen::P_LOOP_BARS].max;
+        int from = (int)std::lround(get(gen::P_LOOP_FROM)), to = (int)std::lround(get(gen::P_LOOP_TO));
+        int bars = (int)std::lround(get(gen::P_LOOP_BARS));
+        from = std::max(first, std::min(last, from));
+        if (changed == gen::P_LOOP_TO)
+        {
+            to = std::max(first, std::min(last, to));
+            if (to < from) from = to;
+            bars = to - from + 1;
+            if (bars > maxBars) { from = to - maxBars + 1; bars = maxBars; }
+        }
+        else
+        {
+            to = from + bars - 1;
+            if (to > last) { to = last; if (changed == gen::P_LOOP_BARS) from = std::max(first, to - bars + 1); bars = to - from + 1; }
+        }
+        if (from != (int)std::lround(get(gen::P_LOOP_FROM))) setTracked(gen::P_LOOP_FROM, (float)from);
+        if (to != (int)std::lround(get(gen::P_LOOP_TO))) setTracked(gen::P_LOOP_TO, (float)to);
+        if (bars != (int)std::lround(get(gen::P_LOOP_BARS))) setTracked(gen::P_LOOP_BARS, (float)bars);
     }
 
     // Q-Link and data-wheel moves arrive as the read-back value plus 1/128 (wheel 1/100) of the
     // range; on a long list that skips entries. A small move counts as one step.
     void nudge(int index)
     {
+        if (loadingState_.load())
+        {   // a project or preset loading: take the value as it comes
+            lastInt_[index] = (int)std::lround(get(index));
+            lastNorm_[index] = getNormalised(index);
+            return;
+        }
         int prev = lastInt_[index];
         float norm = getNormalised(index);
         float prevNorm = lastNorm_[index];
@@ -384,9 +449,18 @@ public:
             out = texts_[gen::T_FOLDER_NAME];
             return true;
         }
-        if (index == gen::P_LOOP_FROM || index == gen::P_LOOP_BARS)
+        if (index == gen::P_LOOP_FROM || index == gen::P_LOOP_TO || index == gen::P_GOTO_BAR || index == gen::P_LOOP_BARS)
         {
-            char b[32]; std::snprintf(b, sizeof(b), index == gen::P_LOOP_FROM ? "Bar %d" : "%d bars", (int)std::lround(plain));
+            int v = (int)std::lround(plain);
+            char b[32]; std::snprintf(b, sizeof(b), index == gen::P_LOOP_BARS ? (v == 1 ? "%d bar" : "%d bars") : "Bar %d", v);
+            out = b; return true;
+        }
+        if (index == gen::P_BPM || index == gen::P_PIECE || index == gen::P_SELECT)
+        {
+            int v = (int)std::lround(plain);
+            char b[32];
+            if (index == gen::P_BPM) std::snprintf(b, sizeof(b), "%d BPM", v);
+            else std::snprintf(b, sizeof(b), index == gen::P_PIECE ? "Piece %d" : "File %d", index == gen::P_SELECT ? v + 1 : v);
             out = b; return true;
         }
         // values with their unit: the MPC shows the display text only, never the unit label
@@ -410,12 +484,14 @@ public:
     void saveExtraState(std::vector<uint8_t>& out) override
     {
         std::lock_guard<std::mutex> lk(textMx_);
-        std::string s = "path=" + currentPath_ + "\n";
+        std::string s = "path=" + currentPath_ + "\n" + "bpm=" + (bpmAuthority_.load() ? "1" : "0") + "\n";
         out.assign(s.begin(), s.end());
     }
     void loadExtraState(const uint8_t* data, size_t size) override
     {
         std::string s((const char*)data, size);
+        size_t b = s.find("bpm=");
+        if (b != std::string::npos && b + 4 < s.size()) bpmAuthority_.store(s[b + 4] == '1');
         size_t p = s.find("path=");
         if (p == std::string::npos) return;
         size_t e = s.find('\n', p);
@@ -434,6 +510,7 @@ public:
     {
         const int n = ctx.numFrames;
         ++blockCounter_;
+        sampleClock_ += (uint64_t)std::max(0, n);
         // 1. a new piece from the worker
         if (Loaded* in = incoming_.load(std::memory_order_acquire))
         {
@@ -446,8 +523,15 @@ public:
                 Loaded* old = current_;
                 current_ = in;
                 engine_.setScore(&current_->score, current_->stepState.data(), current_->noteState.data(), current_->stepWrong.data());
+                {
+                    const Score& sc = current_->score;
+                    firstBar_.store(sc.measures.front().number);
+                    lastBar_.store(sc.measures.back().number);
+                    loopRule(gen::P_LOOP_FROM);
+                }
                 readSettings();
                 engine_.restart();
+                lastCursorStep_ = -1; autoNextAt_ = 0;
                 if (old) retired_.store(old, std::memory_order_release);
                 forceFullPush_ = true;
                 lightsDirty_ = true;
@@ -470,6 +554,25 @@ public:
             if (!current_ && getBool(gen::P_LISTEN)) setParamFromEngine(gen::P_LISTEN, 0.0f);
         }
         if (trig_sndtest_.exchange(false)) { errorSound(0, 1.0f); resetParam(gen::P_SND_TEST); }
+        syncTempoParams();
+        if (int lr = locateReq_.exchange(0))
+        {
+            if (current_)
+            {
+                const Score& sc = current_->score;
+                int st;
+                if (lr == 1)
+                {
+                    int mi = (int)std::lround(get(gen::P_GOTO_BAR)) - sc.measures.front().number;
+                    mi = std::max(0, std::min((int)sc.measures.size() - 1, mi));
+                    st = engine_.stepAtOrAfter(sc.measures[(size_t)mi].start);
+                }
+                else st = (int)std::lround(get(gen::P_GOTO_STEP)) - 1;
+                locateTo(st);
+            }
+        }
+        followMpc(ctx.transport);
+        if (autoNextAt_ && sampleClock_ >= autoNextAt_) { autoNextAt_ = 0; trig_next_.store(true); wake(); }
         if (trig_colreset_.exchange(false))
         {
             for (int i = 0; i < 12; ++i) setParamFromEngine(gen::P_COL_C + i, gen::kControls[gen::P_COL_C + i].def);
@@ -504,6 +607,7 @@ public:
         }
         // 4. engine (what you play while LISTEN plays is not graded)
         engine_.process(settings_, notes, listening_ ? 0 : nn, n, sr_);
+        syncHeaderFields();
         double bpmNow = engine_.effectiveBpm(settings_);
         for (int i = 0; i < engine_.numEvents(); ++i) handleEvent(engine_.event(i), bpmNow);
         // keep the Play button in step with the engine (a first note starts it, the end stops it)
@@ -516,7 +620,7 @@ public:
         accompOffsDue();
         listenBlock(n);
         // 5. LinnStrument
-        lightsBlock();
+        lightsBlock(n);
         // 6. screen
         if (flashBlocks_ > 0 && --flashBlocks_ == 0) flashFrame_ = 0;
         buildDisplay();
@@ -535,6 +639,70 @@ public:
     }
 
 private:
+    // ---- 0.5.0: moving around the piece ------------------------------------------------------------
+    void locateTo(int step)
+    {
+        if (!current_) return;
+        if (listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
+        accompAllOff();
+        engine_.locateStep(step);
+        lastCursorStep_ = -1;
+        autoNextAt_ = 0;
+    }
+    // With Start = MPC Play the MPC's transport drives practice: Play starts it, Stop pauses it,
+    // and while it is stopped, moving the MPC's playhead (the locate and step buttons, Stop
+    // pressed twice for the start) moves the practice position to the same bar and beat.
+    void followMpc(const mpc::Transport& t)
+    {
+        if (settings_.startMode != 2 || !t.valid || !t.ppqValid || !current_) { lastPpq_ = -1; stoppedBlocks_ = 0; return; }
+        if (t.playing) { stoppedBlocks_ = 0; lastPpq_ = t.ppqPos; return; }
+        if (stoppedBlocks_ < 1000000) ++stoppedBlocks_;
+        if (stoppedBlocks_ > 2 && lastPpq_ >= 0 && std::fabs(t.ppqPos - lastPpq_) > 1e-3)
+        {
+            const Score& sc = current_->score;
+            double qpb = t.timeSigNumerator * 4.0 / std::max(1, t.timeSigDenominator);
+            double ppq = std::max(0.0, t.ppqPos);
+            int bar = (int)std::floor(ppq / qpb + 1e-9);
+            double frac = std::max(0.0, std::min(0.999, (ppq - bar * qpb) / qpb));
+            int mi = std::max(0, std::min((int)sc.measures.size() - 1, bar));
+            const Measure& m = sc.measures[(size_t)mi];
+            locateTo(engine_.stepAtOrAfter(m.start + (int32_t)(frac * m.len)));
+        }
+        lastPpq_ = t.ppqPos;
+    }
+    // The header's Bar and Note fields follow the cursor, so the data wheel goes on from there.
+    void syncHeaderFields()
+    {
+        if (!current_ || listening_) return;
+        int cs = engine_.currentStep();
+        if (cs == lastCursorStep_) return;
+        lastCursorStep_ = cs;
+        const Score& sc = current_->score;
+        if (sc.steps.empty()) return;
+        int si = std::max(0, std::min((int)sc.steps.size() - 1, cs));
+        if ((int)std::lround(get(gen::P_GOTO_STEP)) != si + 1) setTracked(gen::P_GOTO_STEP, (float)(si + 1));
+        int bar = sc.measures[sc.steps[(size_t)si].measure].number;
+        if ((int)std::lround(get(gen::P_GOTO_BAR)) != bar) setTracked(gen::P_GOTO_BAR, (float)bar);
+    }
+    // Tempo % and BPM are two views of one tempo: the one turned last decides, the other follows.
+    void syncTempoParams()
+    {
+        if (!current_) return;
+        double fileBpm = std::max(1.0, current_->score.bpm);
+        if (bpmAuthority_.load())
+        {
+            int pct = (int)std::lround(get(gen::P_BPM) / fileBpm * 100.0);
+            pct = std::max(20, std::min(200, pct));
+            if (pct != (int)std::lround(get(gen::P_TEMPO))) setTracked(gen::P_TEMPO, (float)pct);
+        }
+        else
+        {
+            int bpm = (int)std::lround(fileBpm * get(gen::P_TEMPO) / 100.0);
+            bpm = std::max(20, std::min(300, bpm));
+            if (bpm != (int)std::lround(get(gen::P_BPM))) setTracked(gen::P_BPM, (float)bpm);
+        }
+    }
+
     // ---- settings -------------------------------------------------------------------------------
     std::vector<float> preset(int mode, int tempo, int hands, int timing, int pitchTol, int chordTol, int hold)
     {
@@ -550,7 +718,8 @@ private:
     {
         EngineSettings& s = settings_;
         s.mode = (int)get(gen::P_MODE);
-        s.tempoFactor = get(gen::P_TEMPO) / 100.0;
+        double fileBpm = current_ ? std::max(1.0, current_->score.bpm) : 100.0;
+        s.tempoFactor = bpmAuthority_.load() ? get(gen::P_BPM) / fileBpm : get(gen::P_TEMPO) / 100.0;
         s.hands = (int)get(gen::P_HANDS);
         s.view = (int)get(gen::P_VIEW);
         s.loop = getBool(gen::P_LOOP);
@@ -620,6 +789,7 @@ private:
                 if (ev.type == EvType::PieceDone)
                 {
                     setParamFromEngine(gen::P_PLAY, 0.0f);
+                    if (getBool(gen::P_AUTO_NEXT) && !settings_.loop) autoNextAt_ = sampleClock_ + (uint64_t)(2.0 * sr_);
                     if (getBool(gen::P_ERR_BLIP))
                     {   // a soft major third
                         Synth::Env e; e.a = 0.003; e.d = 0.9; e.s = 0; e.r = 0.2;
@@ -633,6 +803,7 @@ private:
             }
             case EvType::Ramp:
             {
+                bpmAuthority_.store(false);
                 double t = get(gen::P_TEMPO) + settings_.ramp;
                 if (t > 200) t = 200;
                 setParamFromEngine(gen::P_TEMPO, (float)t);
@@ -833,21 +1004,99 @@ private:
         lights_.clearLayer(2);
     }
 
-    void lightsBlock()
+    // Cell paints, paced for the route: the LinnStrument's USB side reaches its processor through
+    // a 115200-baud serial link (about 3,800 messages a second), a DIN port runs at 31250 baud
+    // (about 1,000). Up to 3,000 messages a second by USB, 900 by DIN.
+    void flushLights(int frames)
+    {
+        // a budget of messages that refills with time, whatever the block size
+        const bool usb = (int)get(gen::P_LINN_PORT) == 0;
+        const double rate = usb ? 3000.0 : 900.0, cap = usb ? 12.0 : 6.0;
+        linnBudget_ = std::min(cap, linnBudget_ + frames * rate / std::max(1.0, sr_));
+        if (!alsa_.linnConnected() || linnBudget_ < 3.0) return;
+        int sent = lights_.flush((int)linnBudget_, [this](const uint8_t* m) { alsa_.sendLinn(m); });
+        linnBudget_ -= sent;
+    }
+
+    // Cells the plugin has lit go back to these when nothing else lights them: the note colours
+    // of the COLOR page in the LinnStrument's nearest colours (Restore = Note Colors), or off.
+    void updateBaseColours(const LinnLayout& L)
+    {
+        // palette index (geometry.py PALETTE) -> LinnStrument colour; 0 = nothing
+        static const uint8_t kPalToLinn[18] = {0, kLinnRed, kLinnYellow, kLinnGreen, kLinnCyan, kLinnBlue, kLinnMagenta, kLinnWhite,
+                                               kLinnOrange, kLinnLime, kLinnPink, kLinnCyan, kLinnMagenta, kLinnPink, kLinnWhite,
+                                               kLinnYellow, kLinnBlue, kLinnPink};
+        const int restore = (int)get(gen::P_LINN_RESTORE);
+        uint32_t sig = 2166136261u;
+        auto mix = [&sig](int v) { sig = (sig ^ (uint32_t)(v + 7)) * 16777619u; };
+        mix(restore); mix(L.cols); mix(L.rowOffset); mix(L.lowest); mix(L.leftHanded ? 1 : 0);
+        for (int i = 0; i < 12; ++i) mix((int)get(gen::P_COL_C + i));
+        if (sig == baseSig_) return;
+        baseSig_ = sig;
+        for (int r = 0; r < LinnLights::kRows; ++r)
+            for (int c = 1; c < LinnLights::kCols; ++c)
+            {
+                uint8_t colour = 0;
+                if (restore == 1 && c <= L.cols && r < L.rows)
+                {
+                    int pal = (int)get(gen::P_COL_C + ((L.note(c, r) % 12) + 12) % 12);
+                    colour = kPalToLinn[std::max(0, std::min(17, pal))];
+                }
+                lights_.setBase(c, r, colour);
+            }
+    }
+
+    // TEST LIGHTS: a green diagonal (cell paints) and C4 (a Note On on Linn Ch, the played-colour
+    // highlight) for 2.5 s, whether or not Linn Mode is on.
+    void testLightsBlock(const LinnLayout& L)
+    {
+        if (trig_linntest_.load() && alsa_.linnConnected())
+        {
+            trig_linntest_.store(false);
+            resetParam(gen::P_LINN_TEST);
+            lights_.clearLayer(3);
+            for (int c = 1; c <= L.cols; ++c) lights_.setCell(3, c, (c - 1) % L.rows, kLinnGreen);
+            int ch = (int)get(gen::P_LINN_CH) - 1;
+            uint8_t m[3] = {(uint8_t)(0x90 | (ch & 15)), 60, 100};
+            alsa_.sendLinn(m);
+            testCh_ = ch;
+            testUntil_ = sampleClock_ + (uint64_t)(2.5 * sr_) + 1;
+            hintCode_.store(5 | ((int)get(gen::P_LINN_PORT) << 8) | ((ch + 1) << 16));
+        }
+        else if (trig_linntest_.load())
+        {   // the worker looks for the port first; give it a second
+            if (!testWaitUntil_) testWaitUntil_ = sampleClock_ + (uint64_t)(1.0 * sr_) + 1;
+            else if (sampleClock_ >= testWaitUntil_) { trig_linntest_.store(false); testWaitUntil_ = 0; resetParam(gen::P_LINN_TEST); hintCode_.store(6); }
+        }
+        if (!trig_linntest_.load()) testWaitUntil_ = 0;
+        if (testUntil_ && sampleClock_ >= testUntil_)
+        {
+            testUntil_ = 0;
+            lights_.clearLayer(3);
+            bool guideHas60 = false;
+            for (int i = 0; i < litCount_; ++i) guideHas60 |= lit_[i] == 60 && linnCh_ == testCh_;
+            if (!guideHas60) { uint8_t m[3] = {(uint8_t)(0x80 | (testCh_ & 15)), 60, 0}; alsa_.sendLinn(m); }
+        }
+    }
+
+    void lightsBlock(int frames)
     {
         bool linnOn = getBool(gen::P_LINN);
         bool connected = alsa_.linnConnected();
-        if (connected && !wasConnected_) { lights_.invalidate(); lights_.resetCursor(); litCount_ = 0; lightsDirty_ = true; }
-        wasConnected_ = connected;
+        const int linnGen = alsa_.linnGeneration();
+        if (connected && (!wasConnected_ || linnGen != linnGenSeen_)) { lights_.invalidate(); lights_.resetCursor(); litCount_ = 0; lightsDirty_ = true; }
+        wasConnected_ = connected; linnGenSeen_ = linnGen;
+        LinnLayout L = layoutFromParams();
+        updateBaseColours(L);
+        testLightsBlock(L);
         if (!linnOn)
         {
             if (linnWasOn_) { guideAllOff(); lights_.clearLayer(0); lights_.clearLayer(1); barsLit_ = false; linnWasOn_ = false; }
-            if (connected) lights_.flush(24, [this](const uint8_t* m) { alsa_.sendLinn(m); });
+            flushLights(frames);
             trig_section_.store(false); trig_clear_.store(false);
             return;
         }
         linnWasOn_ = true;
-        LinnLayout L = layoutFromParams();
         if (trig_clear_.exchange(false))
         {
             guideAllOff(); lights_.clearLayer(0); lights_.clearLayer(1); barsLit_ = false;
@@ -972,7 +1221,7 @@ private:
             }
             lightsDirty_ = false;
         }
-        if (connected) lights_.flush(24, [this](const uint8_t* m) { alsa_.sendLinn(m); });
+        flushLights(frames);
     }
 
     // ---- display ------------------------------------------------------------------------------------
@@ -1088,6 +1337,11 @@ private:
         setFrame(gen::kD_playedname, names == 2 ? nameFrame(lastPlayed_) : 0, gen::kNoteNameFrames);
         // COLOR page swatches
         for (int i = 0; i < 12; ++i) setFrame(gen::kD_swatch + i, (int)get(gen::P_COL_C + i), gen::kSwatchFrames);
+        // LOAD: the selected row; PLAY's piece list: the chosen and the loaded piece
+        const int rs = rowSel_.load();
+        for (int r = 0; r < 8; ++r) setFrame(gen::kD_rowsel + r, r == rs ? 1 : 0, gen::kF_rowsel);
+        const uint32_t qb = qSelBits_.load();
+        for (int r = 0; r < 8; ++r) setFrame(gen::kD_qsel + r, (int)((qb >> (2 * r)) & 3u), gen::kF_qsel);
         // readouts under the controls: the text for each control's current value
         for (int i = 0; i < gen::kN_ro; ++i)
         {
@@ -1162,6 +1416,19 @@ private:
                 }
                 if (feedback == 2 && !listening_ && sl.step >= 0 && current_->stepWrong[(size_t)sl.step])
                     ghost(*sc, sl, current_->stepWrong[(size_t)sl.step], trail, dimStaff, mk);
+                // 8va / 8vb / 15ma / 15mb over or under the staff where notes were moved by octaves
+                for (int staff = 0; staff < 2; ++staff)
+                {
+                    int code = sl.ott[staff];
+                    if (!code || staff == dimStaff) continue;
+                    int sign = code > 4 ? code - 4 : code, cont = code > 4 ? 1 : 0;
+                    bool above = sign == 1 || sign == 3;
+                    int row = staff == 0 ? (above ? 0 : scoredetail::rowOf(0, gen::kTrebleLowPos))
+                                         : (above ? scoredetail::rowOf(1, gen::kBassTopPos + 7) : gen::kRows - 1);
+                    int inward = above ? 1 : -1;
+                    for (int tries = 0; tries < 2 && row >= 0 && row < gen::kRows; ++tries, row += inward)
+                        if (mk[row] == 0 && sl.cells[row] == 0) { mk[row] = (uint8_t)(gen::kMarkOttavaBase + (sign - 1) * 2 + cont); break; }
+                }
             }
             for (int r = 0; r < gen::kRows; ++r) setFrame(gen::kD_mark + s * gen::kRows + r, mk[r], gen::kMarkFrames);
         }
@@ -1180,7 +1447,7 @@ private:
         if (staff == dimStaff) return;
         const Measure& m = sc.measures[sl.measure];
         Spelling sp = spellPitch(pitch, m.keySf, m.minor, 0);
-        int pos = staffPosition(sp, staff);
+        int pos = staffPosition(sp, staff) + sl.octShift[staff];   // under an 8va line like the written notes
         int row = scoredetail::rowOf(staff, pos);
         if (row < 0) return;
         int8_t keyAcc[7]; keyAccidentals(m.keySf, keyAcc);
@@ -1249,6 +1516,7 @@ private:
     {
         alsa_.open("Sight Reader");
         progress_.load(places_.home);
+        loadPlaylist();
         rescan();
         refreshList();
         updateStats();
@@ -1269,9 +1537,38 @@ private:
             {
                 std::string p;
                 { std::lock_guard<std::mutex> lk(textMx_); p = restorePath_; }
-                if (!p.empty()) loadPath(p, false);
+                if (get(gen::P_QPANEL) >= 0.5f) setTracked(gen::P_QPANEL, 0.0f);
+                if (!p.empty()) { queueFromPath(p); loadPath(p, false); updateQueuePanel(); }
             }
             if (trig_load_.exchange(false)) { loadSelected(); resetTrigger(gen::P_LOAD); }
+            if (trig_pladd_.exchange(false)) { playlistAdd(); resetTrigger(gen::P_PL_ADD); }
+            if (trig_plremove_.exchange(false)) { playlistRemove(); resetTrigger(gen::P_PL_REMOVE); }
+            if (qpanelOpened_.exchange(false)) { if (queuePos_ >= 0) setTracked(gen::P_PIECE, (float)(queuePos_ + 1)); updateQueuePanel(); }
+            if (pieceSel_.exchange(false))
+            {   // the data wheel on the title: open the list so the choice can be seen
+                updateQueuePanel();
+                if (!queue_.empty() && get(gen::P_QPANEL) < 0.5f) setTracked(gen::P_QPANEL, 1.0f);
+            }
+            if (trig_piecego_.exchange(false))
+            {
+                resetTrigger(gen::P_PIECE_GO);
+                loadQueue((int)std::lround(get(gen::P_PIECE)) - 1);
+                if (get(gen::P_QPANEL) >= 0.5f) setTracked(gen::P_QPANEL, 0.0f);
+            }
+            {
+                int qp = qpick_.exchange(-1);
+                if (qp >= 0)
+                {
+                    resetTrigger(gen::P_QPICK0 + qp);
+                    loadQueue(qTop_ + qp);
+                    if (get(gen::P_QPANEL) >= 0.5f) setTracked(gen::P_QPANEL, 0.0f);
+                }
+            }
+            if (trig_next_.exchange(false))
+            {
+                if (queuePos_ >= 0 && queuePos_ + 1 < (int)queue_.size()) loadQueue(queuePos_ + 1);
+                else if (!queue_.empty()) setText(gen::T_MESSAGE, "End of " + queueName_);
+            }
             if (trig_gen_.exchange(false)) { generate(); resetTrigger(gen::P_GEN_GO); }
             if (trig_save_.exchange(false)) { saveGenerated(); resetTrigger(gen::P_GEN_SAVE); }
             if (trig_rebuild_.exchange(false))
@@ -1292,19 +1589,35 @@ private:
                     setText(gen::T_MESSAGE, "Waiting for the right hand (" + noteName(expected) + "). Hands = Left: LH only");
                 else if (kind == 4)   // LISTEN started: speed and channel
                     setText(gen::T_MESSAGE, "Listening at " + std::to_string(expected) + "% (Sight Reader MIDI Out, ch " + std::to_string(played) + ")");
+                else if (kind == 5)   // TEST LIGHTS sent: port, channel
+                {
+                    static const char* ports[3] = {"USB", "MPC Out A", "MPC Out B"};
+                    std::string m = std::string("Test sent (") + ports[std::max(0, std::min(2, expected))] + ", ch " + std::to_string(played) + "): green diagonal + C4 for 2 s";
+                    setText(gen::T_MESSAGE, m);
+                    setText(gen::T_LINN_STATUS, "Test sent. Nothing lit? See LinnStrument in the guide");
+                }
+                else if (kind == 6)
+                {
+                    setText(gen::T_MESSAGE, "TEST LIGHTS: nothing connected on this Linn Port");
+                    setText(gen::T_LINN_STATUS, "Nothing connected: check Linn Port");
+                }
             }
             PassRecord pr;
             bool anyPass = false;
             while (passQueue_.pop(pr)) { applyPass(pr); anyPass = true; }
             if (anyPass) { progress_.save(places_.home); updateStats(); refreshList(); }
-            // LinnStrument: look for it every few seconds while Linn Mode is on
+            // LinnStrument: look for it every few seconds while Linn Mode is on (and at once when
+            // the port changes or TEST LIGHTS is pressed)
             auto now = std::chrono::steady_clock::now();
-            if (getBool(gen::P_LINN) && now - lastLinnScan > std::chrono::seconds(3))
+            bool scanNow = trig_linnscan_.exchange(false);
+            if ((getBool(gen::P_LINN) || scanNow) && (scanNow || now - lastLinnScan > std::chrono::seconds(3)))
             {
                 lastLinnScan = now;
-                bool ok = alsa_.findAndConnectLinn();
-                setText(gen::T_LINN_STATUS, !alsa_.isOpen() ? "No MIDI sequencer here"
-                                            : (ok ? "LinnStrument connected" : "Not found: plug in by USB"));
+                int port = std::max(0, std::min(2, (int)get(gen::P_LINN_PORT)));
+                bool ok = alsa_.findAndConnectLinn(port);
+                static const char* found[3] = {"LinnStrument connected by USB", "Sending to MPC MIDI Out A", "Sending to MPC MIDI Out B"};
+                static const char* missing[3] = {"Not found: plug in by USB", "MPC MIDI Out A not found", "MPC MIDI Out B not found"};
+                setText(gen::T_LINN_STATUS, !alsa_.isOpen() ? "No MIDI sequencer here" : (ok ? found[port] : missing[port]));
             }
             // the project's key, for Key Lights
             int km = (int)get(gen::P_LINN_KEY);
@@ -1337,13 +1650,103 @@ private:
         scanLibrary(places_, f);
         std::lock_guard<std::mutex> lk(libMx_);
         folders_.swap(f);
+        appendPlaylistFolder();
     }
 
-    // Visible entries of the selected folder, in the chosen order.
+    // ---- the playlist (0.5.0): files in your order, kept in SightReader/playlist.txt -----------
+    void loadPlaylist()
+    {
+        playlist_.clear();
+        std::vector<uint8_t> raw;
+        if (!readWholeFile(places_.home + "/playlist.txt", raw, 1u << 20)) return;
+        std::string text(raw.begin(), raw.end());
+        size_t pos = 0;
+        while (pos < text.size())
+        {
+            size_t nl = text.find('\n', pos); if (nl == std::string::npos) nl = text.size();
+            std::string line = text.substr(pos, nl - pos); pos = nl + 1;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (!line.empty() && line[0] != '#') playlist_.push_back(line);
+        }
+    }
+    void savePlaylist()
+    {
+        std::string out = "# Sight Reader playlist: one file per line, played in this order\n";
+        for (const std::string& p : playlist_) out += p + "\n";
+        writeWholeFile(places_.home + "/playlist.txt", out.data(), out.size());
+    }
+    // Called with libMx_ held: the playlist is the last folder of the list while it has files.
+    void appendPlaylistFolder()
+    {
+        if (!folders_.empty() && folders_.back().playlist) folders_.pop_back();
+        if (playlist_.empty()) return;
+        LibFolder pl; pl.name = "Playlist"; pl.dir = places_.home; pl.playlist = true;
+        for (const std::string& path : playlist_)
+        {
+            const LibEntry* found = nullptr;
+            for (const LibFolder& fo : folders_) { for (const LibEntry& e : fo.entries) if (e.path == path) { found = &e; break; } if (found) break; }
+            if (found) { pl.entries.push_back(*found); continue; }
+            std::vector<uint8_t> probe;
+            if (!readWholeFile(path, probe, 8u << 20)) continue;          // gone: left out (kept in the file)
+            LibEntry e; e.path = path; e.file = path.substr(path.rfind('/') + 1); e.title = prettyName(e.file);
+            pl.entries.push_back(e);
+        }
+        if (!pl.entries.empty()) folders_.push_back(pl);
+    }
+    // The file the LOAD list has selected (empty when none).
+    std::string selectedPath(bool* inPlaylist = nullptr)
+    {
+        std::lock_guard<std::mutex> lk(libMx_);
+        int nf = (int)folders_.size();
+        if (nf == 0) return std::string();
+        int fi = std::max(0, std::min(nf - 1, (int)get(gen::P_FOLDER)));
+        std::vector<const LibEntry*> v = sortedEntries(folders_[(size_t)fi]);
+        int sel = (int)std::lround(get(gen::P_SELECT));
+        if (inPlaylist) *inPlaylist = folders_[(size_t)fi].playlist;
+        return sel >= 0 && sel < (int)v.size() ? v[(size_t)sel]->path : std::string();
+    }
+    void playlistAdd()
+    {
+        bool inPl = false;
+        std::string path = selectedPath(&inPl);
+        if (path.empty()) return;
+        playlist_.push_back(path);
+        savePlaylist();
+        { std::lock_guard<std::mutex> lk(libMx_); appendPlaylistFolder(); }
+        setText(gen::T_MESSAGE, "Added to Playlist (" + std::to_string(playlist_.size()) + " files; it is the last folder)");
+        refreshList();
+    }
+    void playlistRemove()
+    {
+        bool inPl = false;
+        std::string path = selectedPath(&inPl);
+        if (path.empty()) return;
+        int at = -1;
+        if (inPl)
+        {   // the selected row of the Playlist folder (the same file may be in it twice)
+            int sel = (int)std::lround(get(gen::P_SELECT)), k = -1;
+            for (int i = 0; i < (int)playlist_.size(); ++i)
+            {
+                bool listed = false;
+                { std::lock_guard<std::mutex> lk(libMx_); for (const LibEntry& e : folders_.back().entries) if (e.path == playlist_[(size_t)i]) { listed = true; break; } }
+                if (listed && ++k == sel) { at = i; break; }
+            }
+        }
+        else for (int i = (int)playlist_.size() - 1; i >= 0 && at < 0; --i) if (playlist_[(size_t)i] == path) at = i;
+        if (at < 0) { setText(gen::T_MESSAGE, "This file is not in the Playlist"); return; }
+        playlist_.erase(playlist_.begin() + at);
+        savePlaylist();
+        { std::lock_guard<std::mutex> lk(libMx_); appendPlaylistFolder(); }
+        setText(gen::T_MESSAGE, playlist_.empty() ? std::string("Playlist empty") : "Removed (" + std::to_string(playlist_.size()) + " left)");
+        refreshList();
+    }
+
+    // Visible entries of the selected folder, in the chosen order (the Playlist keeps its own).
     std::vector<const LibEntry*> sortedEntries(const LibFolder& fo)
     {
         std::vector<const LibEntry*> v;
         for (const LibEntry& e : fo.entries) v.push_back(&e);
+        if (fo.playlist) return v;
         int sort = (int)get(gen::P_SORT);
         auto prog = [this](const LibEntry* e) -> const PieceProgress* {
             auto it = progress_.pieces.find(ProgressStore::keyFor(e->path, places_.home, places_.pluginDir));
@@ -1369,7 +1772,32 @@ private:
         int fi = std::max(0, std::min(nf - 1, (int)get(gen::P_FOLDER)));
         const LibFolder& fo = folders_[(size_t)fi];
         std::vector<const LibEntry*> v = sortedEntries(fo);
-        int scroll = std::max(0, std::min((int)v.size() - 1, (int)get(gen::P_SCROLL)));
+        // The selection: Select (the data wheel on the list) is the file; Scroll and Row (the
+        // older knobs) and a tap on a row move it too. The list scrolls to keep it in view.
+        const int n = (int)v.size();
+        const int gen0 = listGen_.load();
+        int src = listSrc_.exchange(0), pick = pick_.exchange(-1);
+        int scroll = std::max(0, std::min(std::max(0, n - 1), (int)std::lround(get(gen::P_SCROLL))));
+        int row = std::max(0, std::min(7, (int)std::lround(get(gen::P_ROW))));
+        int sel;
+        if (pick >= 0) { resetTrigger(gen::P_PICK0 + pick); row = pick; sel = scroll + row; }
+        else if (src == 2) sel = (int)std::lround(get(gen::P_SELECT));
+        else sel = scroll + row;
+        sel = std::max(0, std::min(std::max(0, n - 1), sel));
+        if (sel < scroll) scroll = sel;
+        if (sel > scroll + 7) scroll = sel - 7;
+        row = sel - scroll;
+        // written back only for a list with files in it (an empty or missing library, or a
+        // project loading, leaves the saved values alone)
+        std::unique_lock<std::mutex> stateLock(stateMx_);   // never in the middle of a project loading
+        if (n > 0 && listGen_.load() == gen0 && !loadingState_.load())
+        {
+            if ((int)std::lround(get(gen::P_SCROLL)) != scroll) setTracked(gen::P_SCROLL, (float)scroll);
+            if ((int)std::lround(get(gen::P_ROW)) != row) setTracked(gen::P_ROW, (float)row);
+            if ((int)std::lround(get(gen::P_SELECT)) != sel) setTracked(gen::P_SELECT, (float)sel);
+        }
+        stateLock.unlock();
+        rowSel_.store(n > 0 && sel < n ? row : -1);
         char buf[160];
         std::snprintf(buf, sizeof(buf), "%s  (%d/%d)", fo.name.c_str(), fi + 1, nf);
         setText(gen::T_FOLDER_NAME, buf);
@@ -1386,7 +1814,6 @@ private:
             else std::snprintf(buf, sizeof(buf), "  --   %s", t.c_str());
             setText(gen::T_ROW0 + r, std::string(buf).substr(0, 60));
         }
-        int sel = scroll + (int)get(gen::P_ROW);
         if (sel < (int)v.size())
         {
             const LibEntry* e = v[(size_t)sel];
@@ -1401,25 +1828,94 @@ private:
             else setText(gen::T_INFO2, "Not played yet");
             setText(gen::T_INFO3, e->source.substr(0, 60));
         }
-        std::snprintf(buf, sizeof(buf), "%d files", (int)v.size());
-        setText(gen::T_MESSAGE, buf);
+        if (src || pick >= 0 || fi != lastShownFolder_)
+        {
+            lastShownFolder_ = fi;
+            std::snprintf(buf, sizeof(buf), "%d files%s", (int)v.size(), fo.playlist ? " in your order. REMOVE takes one out" : "");
+            setText(gen::T_MESSAGE, buf);
+        }
     }
 
+    // LOAD: the selected file, and its folder (or the Playlist) becomes the queue: the PLAY
+    // page's piece list, Auto Next, and the (k/N) after the title.
     void loadSelected()
     {
-        std::string path;
+        int sel;
         {
             std::lock_guard<std::mutex> lk(libMx_);
             int nf = (int)folders_.size();
             if (nf == 0) return;
             int fi = std::max(0, std::min(nf - 1, (int)get(gen::P_FOLDER)));
-            std::vector<const LibEntry*> v = sortedEntries(folders_[(size_t)fi]);
-            int sel = std::max(0, (int)get(gen::P_SCROLL)) + (int)get(gen::P_ROW);
-            if (sel >= (int)v.size()) return;
-            path = v[(size_t)sel]->path;
-            pendingTitle_ = v[(size_t)sel]->title;
+            const LibFolder& fo = folders_[(size_t)fi];
+            std::vector<const LibEntry*> v = sortedEntries(fo);
+            sel = (int)std::lround(get(gen::P_SELECT));
+            if (sel < 0 || sel >= (int)v.size()) return;
+            queue_.clear();
+            for (const LibEntry* e : v) queue_.push_back({e->path, e->title});
+            queueName_ = fo.name;
+            qTop_ = 0;
         }
-        loadPath(path, true);
+        loadQueue(sel);
+    }
+    void loadQueue(int i)
+    {
+        if (i < 0 || i >= (int)queue_.size()) return;
+        queuePos_ = i;
+        pendingTitle_ = queue_[(size_t)i].title;
+        loadPath(queue_[(size_t)i].path, true);
+        setTracked(gen::P_PIECE, (float)(i + 1));
+        updateQueuePanel();
+    }
+    // After a project load: the restored file's folder is the queue.
+    void queueFromPath(const std::string& path)
+    {
+        std::lock_guard<std::mutex> lk(libMx_);
+        for (const LibFolder& fo : folders_)
+        {
+            if (fo.playlist) continue;
+            std::vector<const LibEntry*> v = sortedEntries(fo);
+            for (size_t k = 0; k < v.size(); ++k)
+                if (v[k]->path == path)
+                {
+                    queue_.clear();
+                    for (const LibEntry* e : v) queue_.push_back({e->path, e->title});
+                    queueName_ = fo.name; queuePos_ = (int)k; qTop_ = 0;
+                    pendingTitle_ = v[k]->title;
+                    return;
+                }
+        }
+    }
+    // The PLAY page's piece list: eight rows around the piece the data wheel points at.
+    void updateQueuePanel()
+    {
+        const int n = (int)queue_.size();
+        if (n == 0)
+        {
+            for (int r = 0; r < 8; ++r) setText(gen::T_Q0 + r, r == 0 ? "Load a piece on LOAD: its folder (or the Playlist)" : (r == 1 ? "becomes this list." : ""));
+            setText(gen::T_QINFO, "No list yet");
+            qSelBits_.store(0);
+            return;
+        }
+        int want = (int)std::lround(get(gen::P_PIECE)) - 1;
+        int selQ = std::max(0, std::min(n - 1, want));
+        if (selQ != want) setTracked(gen::P_PIECE, (float)(selQ + 1));
+        if (selQ < qTop_) qTop_ = selQ;
+        if (selQ > qTop_ + 7) qTop_ = selQ - 7;
+        qTop_ = std::max(0, std::min(std::max(0, n - 8), qTop_));
+        uint32_t bits = 0;
+        char buf[160];
+        for (int r = 0; r < 8; ++r)
+        {
+            int i = qTop_ + r;
+            if (i >= n) { setText(gen::T_Q0 + r, ""); continue; }
+            std::snprintf(buf, sizeof(buf), "%3d   %s", i + 1, queue_[(size_t)i].title.c_str());
+            setText(gen::T_Q0 + r, std::string(buf).substr(0, 60));
+            uint32_t f = i == selQ ? 2u : (i == queuePos_ ? 1u : 0u);
+            bits |= f << (2 * r);
+        }
+        qSelBits_.store(bits);
+        std::snprintf(buf, sizeof(buf), "%s   %d/%d   Wheel: choose. Push or tap: load", queueName_.c_str(), queuePos_ + 1, n);
+        setText(gen::T_QINFO, std::string(buf).substr(0, 60));
     }
 
     BuildOptions buildOptions() const
@@ -1483,7 +1979,10 @@ private:
             currentKey_ = L->progressKey;
         }
         char buf[200];
-        std::snprintf(buf, sizeof(buf), "%s", title.c_str());
+        bool inQueue = !generated && queuePos_ >= 0 && queuePos_ < (int)queue_.size() && queue_[(size_t)queuePos_].path == path && queue_.size() > 1;
+        std::string shown = title.size() > 46 ? title.substr(0, 45) + "~" : title;
+        if (inQueue) std::snprintf(buf, sizeof(buf), "%s  (%d/%d)", shown.c_str(), queuePos_ + 1, (int)queue_.size());
+        else std::snprintf(buf, sizeof(buf), "%s", title.c_str());
         setText(gen::T_TITLE, std::string(buf).substr(0, 60));
         updateStats();
         return true;
@@ -1613,7 +2112,26 @@ private:
     std::atomic<bool> trig_restart_{false}, trig_load_{false}, trig_rescan_{false}, trig_gen_{false}, trig_save_{false},
                       trig_section_{false}, trig_clear_{false}, trig_keyread_{false}, trig_rebuild_{false}, trig_restore_{false},
                       listDirty_{false}, layoutChanged_{false}, loading_{false}, needUpdateDisplay_{true},
-                      trig_sndtest_{false}, trig_colreset_{false};
+                      trig_sndtest_{false}, trig_colreset_{false},
+                      trig_piecego_{false}, trig_pladd_{false}, trig_plremove_{false}, trig_linnscan_{false},
+                      trig_linntest_{false}, trig_next_{false}, pieceSel_{false}, qpanelOpened_{false}, bpmAuthority_{false};
+    // 0.5.0
+    std::atomic<int> listSrc_{0}, listGen_{0}, pick_{-1}, qpick_{-1}, locateReq_{0}, rowSel_{-1};
+    std::atomic<bool> loadingState_{false};
+    std::mutex stateMx_;                           // a state load, against the worker writing list values
+    std::atomic<uint32_t> qSelBits_{0};
+    std::atomic<int> firstBar_{1}, lastBar_{1};
+    int lastCursorStep_ = -1, stoppedBlocks_ = 0, linnGenSeen_ = -1;
+    uint64_t sampleClock_ = 0, autoNextAt_ = 0, testUntil_ = 0, testWaitUntil_ = 0;
+    double linnBudget_ = 0;
+    int testCh_ = 0;
+    double lastPpq_ = -1;
+    uint32_t baseSig_ = 0;
+    struct QueueItem { std::string path, title; };
+    std::vector<QueueItem> queue_;                 // worker
+    int queuePos_ = -1, qTop_ = 0, lastShownFolder_ = -1;
+    std::string queueName_;
+    std::vector<std::string> playlist_;
     std::atomic<bool> needNotify_[gen::kNumControls] = {};
     int lastInt_[gen::kNumControls];
     float lastNorm_[gen::kNumControls];
@@ -1653,6 +2171,15 @@ VstIntPtr srDispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr va
         mpc::Plugin* p = static_cast<mpc::Plugin*>(e->object);
         mpc::copyString(static_cast<char*>(ptr), 64, p->displayText(index).c_str());
         return 0;
+    }
+    if (opcode == effSetChunk && e && e->object)
+    {
+        SightReader* sr = static_cast<SightReader*>(static_cast<mpc::Plugin*>(e->object));
+        std::lock_guard<std::mutex> lk(sr->stateMutex());
+        sr->setLoadingState(true);
+        VstIntPtr r = mpc::detail::dispatcher(e, opcode, index, value, ptr, opt);
+        sr->setLoadingState(false);
+        return r;
     }
     return mpc::detail::dispatcher(e, opcode, index, value, ptr, opt);
 }

@@ -326,6 +326,69 @@ static int selftest()
         for (size_t i = 0; i < s2.notes.size(); ++i) std::printf(" %d@c%dr%d", fg.finger[i], fg.col[i], fg.row[i]);
         std::printf("\n");
     }
+    // --- 0.5.0: notes beyond the staff move by octaves under 8va / 8vb lines -------------------
+    {
+        std::vector<SmfWriteTrack> t(2); t[0].name = "Right"; t[1].name = "Left";
+        const int hi[4] = {88, 89, 91, 93}, mid[4] = {72, 74, 76, 77};      // E6 F6 G6 A6 | C5 D5 E5 F5
+        for (int i = 0; i < 4; ++i) t[0].notes.push_back({i * 96, (i + 1) * 96, (uint8_t)hi[i], 80});
+        for (int i = 0; i < 4; ++i) t[0].notes.push_back({(4 + i) * 96, (5 + i) * 96, (uint8_t)mid[i], 80});
+        t[1].notes.push_back({0, 4 * 96, 48, 70});                           // C3, on the staff
+        t[1].notes.push_back({4 * 96, 8 * 96, 33, 70});                      // A1, two ledger lines too low for the grid
+        std::vector<uint8_t> b = writeSmf(96, 100, 4, 4, 0, false, "Ottava", t);
+        Smf sm; Score so; std::string e4;
+        CHECK(parseSmf(b.data(), b.size(), sm, e4) && buildScore(sm, BuildOptions(), so, e4));
+        CHECK(so.measures.size() == 2);
+        int starts8va = 0, cont8va = 0, starts8vb = 0;
+        for (const Slot& sl : so.slots)
+        {
+            bool bar1 = sl.measure == 0;
+            if (sl.ott[0] == 1) ++starts8va;
+            if (sl.ott[0] == 5) ++cont8va;
+            if (sl.ott[1] == 2) ++starts8vb;
+            if (bar1 && sl.step >= 0) CHECK(sl.octShift[0] == -7 && sl.octShift[1] == 0);
+            if (!bar1 && sl.step >= 0) CHECK(sl.octShift[0] == 0 && sl.octShift[1] == 7);
+        }
+        CHECK(starts8va == 1 && cont8va >= 3 && starts8vb == 1);
+        // every head is drawn where its note sits once the line's octave is taken off
+        for (const Slot& sl : so.slots)
+            for (uint32_t h = 0; h < sl.headCount; ++h)
+            {
+                const HeadRef& hr = so.heads[sl.headFirst + h];
+                if (hr.note < 0) continue;
+                const PlayNote& pn = so.notes[(size_t)hr.note];
+                Spelling sp = spellPitch(pn.pitch, 0, false);
+                CHECK(hr.row == scoredetail::rowOf(hr.staff, staffPosition(sp, hr.staff) + sl.octShift[hr.staff]));
+            }
+        // --- locating: a bar's first step, and moving the practice position there
+        std::vector<uint8_t> ss(so.steps.size(), 0), ns(so.notes.size(), 0), sw(so.steps.size(), 0);
+        Engine eng; eng.setScore(&so, ss.data(), ns.data(), sw.data()); eng.restart();
+        int s2 = eng.stepAtOrAfter(so.measures[1].start);
+        CHECK(s2 == 4 && so.steps[(size_t)s2].measure == 1);
+        eng.locateStep(s2);
+        CHECK(eng.currentStep() == s2);
+        eng.locateStep(0);
+        CHECK(eng.currentStep() == 0);
+    }
+    // --- 0.5.0: the LinnStrument compositor leaves untouched cells alone ------------------------
+    {
+        LinnLights l2; std::vector<std::array<uint8_t, 3>> sent;
+        auto rec = [&](const uint8_t* m) { sent.push_back({m[0], m[1], m[2]}); };
+        for (int c = 1; c <= 25; ++c) for (int r = 0; r < 8; ++r) l2.setBase(c, r, kLinnCyan);
+        l2.flush(1000, rec);
+        CHECK(sent.empty());                                  // base colours alone paint nothing
+        l2.setCell(2, 5, 3, kLinnRed);
+        l2.flush(1000, rec);
+        CHECK(sent.size() == 3 && sent[2][1] == 22 && sent[2][2] == kLinnRed);
+        sent.clear(); l2.clearLayer(2); l2.flush(1000, rec);
+        CHECK(sent.size() == 1 && sent[0][1] == 22 && sent[0][2] == kLinnCyan);   // back to its base, not off
+        sent.clear(); l2.invalidate(); l2.resetCursor(); l2.flush(1000, rec);
+        int paints = 0; for (auto& m : sent) if (m[1] == 22) ++paints;
+        CHECK(paints == 1 && l2.touchedCount() == 1);         // only the cell it ever used
+        // pacing: a flush never sends part of a cell
+        sent.clear(); for (int c = 1; c <= 10; ++c) l2.setCell(3, c, c % 8, kLinnGreen);
+        int n = l2.flush(3, rec);
+        CHECK(n <= 3 && sent.size() == (size_t)n);
+    }
     // --- generator: every combination parses and lays out ---------------------------------------
     for (int sc_i = 0; sc_i < kNumGenScales; ++sc_i)
         for (int meter = 0; meter < 4; ++meter)

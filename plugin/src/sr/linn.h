@@ -187,9 +187,18 @@ class LinnLights
 public:
     static constexpr int kCols = 26, kRows = 8;
 
-    LinnLights() { std::memset(want_, 0, sizeof(want_)); std::memset(sent_, 0, sizeof(sent_)); std::memset(layer_, 0, sizeof(layer_)); }
+    static constexpr int kLayers = 4;
+    LinnLights()
+    {
+        std::memset(sent_, 0, sizeof(sent_)); std::memset(layer_, 0, sizeof(layer_));
+        std::memset(base_, 0, sizeof(base_)); std::memset(touched_, 0, sizeof(touched_));
+    }
 
-    // Layers: 0 key, 1 bars, 2 guide. Colour 0 = nothing from that layer.
+    // Layers: 0 key, 1 bars, 2 guide, 3 test. Colour 0 = nothing from that layer.
+    // A cell is only ever written after a layer has painted it ("touched"): a custom light
+    // pattern on the instrument lives in the same firmware layer these messages paint, so cells
+    // this plugin never used are left alone. A touched cell that no layer wants any more goes
+    // back to its base colour (the player's note colours, 0.5.0) or off.
     void clearLayer(int layer) { for (int c = 0; c < kCols; ++c) for (int r = 0; r < kRows; ++r) layer_[layer][c][r] = 0; dirty_ = true; }
     void setCell(int layer, int col, int row, uint8_t colour)
     {
@@ -205,8 +214,18 @@ public:
             for (int c = 1; c <= L.cols; ++c)
                 if (((L.note(c, r) % 12) + 12) % 12 == pc) setCell(layer, c, r, colour);
     }
-    // Forget what the instrument shows (it was unplugged or switched off): repaint everything.
-    void invalidate() { for (int c = 0; c < kCols; ++c) for (int r = 0; r < kRows; ++r) sent_[c][r] = 0xFF; dirty_ = true; }
+    void setBase(int col, int row, uint8_t colour)
+    {
+        if (col < 0 || col >= kCols || row < 0 || row >= kRows) return;
+        if (base_[col][row] != colour) { base_[col][row] = colour; dirty_ = true; }
+    }
+    // Forget what the instrument shows (it was unplugged or switched off): repaint what we touched.
+    void invalidate()
+    {
+        for (int c = 0; c < kCols; ++c) for (int r = 0; r < kRows; ++r) if (touched_[c][r]) sent_[c][r] = 0xFF;
+        dirty_ = true;
+    }
+    int touchedCount() const { int n = 0; for (int c = 0; c < kCols; ++c) for (int r = 0; r < kRows; ++r) n += touched_[c][r] ? 1 : 0; return n; }
 
     // Writes up to maxMsgs MIDI messages (3 bytes each) to out; returns the count.
     template <typename Send> int flush(int maxMsgs, Send send)
@@ -217,15 +236,18 @@ public:
         for (int r = 0; r < kRows; ++r)
             for (int c = 1; c < kCols; ++c)
             {
-                uint8_t w = layer_[2][c][r] ? layer_[2][c][r] : (layer_[1][c][r] ? layer_[1][c][r] : layer_[0][c][r]);
-                uint8_t target = w ? w : (uint8_t)kLinnOff;
-                if (sent_[c][r] == target || (sent_[c][r] == 0 && target == kLinnOff)) continue;
+                uint8_t w = 0;
+                for (int l = kLayers - 1; l >= 0 && !w; --l) w = layer_[l][c][r];
+                if (!w && !touched_[c][r]) continue;
+                uint8_t target = w ? w : (base_[c][r] ? base_[c][r] : (uint8_t)kLinnOff);
+                if (sent_[c][r] == target) continue;
                 if (msgs + 3 > maxMsgs) { pending = true; continue; }
+                touched_[c][r] = true;
                 uint8_t m[3];
                 if (cursorRow_ != r) { m[0] = 0xB0; m[1] = 21; m[2] = (uint8_t)r; send(m); ++msgs; cursorRow_ = r; }
                 if (cursorCol_ != c) { m[0] = 0xB0; m[1] = 20; m[2] = (uint8_t)c; send(m); ++msgs; cursorCol_ = c; }
                 m[0] = 0xB0; m[1] = 22; m[2] = target; send(m); ++msgs;
-                sent_[c][r] = target == kLinnOff ? 0 : target;
+                sent_[c][r] = target;
             }
         dirty_ = pending;
         return msgs;
@@ -233,9 +255,10 @@ public:
     void resetCursor() { cursorCol_ = cursorRow_ = -1; }
 
 private:
-    uint8_t layer_[3][kCols][kRows];
-    uint8_t want_[kCols][kRows];
-    uint8_t sent_[kCols][kRows];
+    uint8_t layer_[kLayers][kCols][kRows];
+    uint8_t base_[kCols][kRows];
+    bool touched_[kCols][kRows];
+    uint8_t sent_[kCols][kRows];            // what we last sent; 0 nothing yet, 0xFF unknown
     bool dirty_ = false;
     int cursorCol_ = -1, cursorRow_ = -1;
 };

@@ -1,12 +1,51 @@
 # LinnStrument features
 
-Switch **Linn Mode** on (LINN page). The plugin finds the LinnStrument on the MPC's MIDI
-system by itself (it looks every three seconds) and sends it light messages directly. The status
-line says whether it is connected. Nothing here changes your LinnStrument's own settings: all
-lights are overlays the instrument removes again, and **CLEAR LIGHTS** removes everything this
-plugin lit.
+Everything in Sight Reader works with any MIDI keyboard or controller. With a LinnStrument it
+can also light the instrument: the next notes to play, a whole passage, suggested fingerings, the
+project's key. Switch **Linn Mode** on (LINN page). Nothing here changes your LinnStrument's own
+settings, and **CLEAR LIGHTS** takes away everything the plugin lit.
 
 ![LINN, Night](img/linn-night.png)
+
+## Connecting
+
+**Linn Port** says which way the light messages go:
+
+- **USB**: to the LinnStrument plugged into the MPC's USB. The plugin finds it by name (it looks
+  every three seconds while Linn Mode is on).
+- **MPC Out A / MPC Out B**: out of the MPC's MIDI Out A or B into the LinnStrument's MIDI In
+  jack. The LinnStrument sends and receives MIDI either over USB or over its MIDI jacks, not
+  both (Global Settings, *MIDI I/O*), so this route needs the jacks both ways: a cable from the
+  LinnStrument's MIDI Out to the MPC's MIDI In (what you play), and one from the MPC's MIDI Out A
+  (or B) to the LinnStrument's MIDI In (the lights). USB then only powers it.
+
+**STATUS** (top right) says what is connected. **TEST LIGHTS** paints a green diagonal across the
+surface and lights middle C with a Note On on Linn Ch, for about two seconds, whether or not Linn
+Mode is on. If nothing lights, the messages are not getting through, and no other setting will
+help until they do.
+
+### Known problem: no lights over USB on the author's MPC (0.4.0 test)
+
+On an MPC Live III with a LinnStrument 200 (firmware 2.3.x, MIDI I/O = USB), nothing the MPC
+sent over USB lit anything: not the plugin's paints, not its Note Ons, not single messages sent
+by hand one second apart, and not a plain MIDI track on the MPC playing into the LinnStrument.
+The plugin was connected to the instrument's port and the kernel's byte counters for that port
+went up, so the bytes left the MPC; the LinnStrument did not act on them. The cause is not known
+yet. To find out whether the LinnStrument takes light messages at all, plug it into a computer
+and send a few. On a Mac, with [SendMIDI](https://github.com/gbevin/SendMIDI):
+
+```bash
+brew install gbevin/tools/sendmidi
+```
+
+```bash
+sendmidi dev "LinnStrument MIDI" cc 20 5 cc 21 3 cc 22 3 ch 2 on 60 100; sleep 3; sendmidi dev "LinnStrument MIDI" ch 2 off 60 0 cc 22 7
+```
+
+The first command installs it; the second should turn the cell in column 5, row 3 green and light
+every C4 cell in your Played colour for three seconds (the C4 highlight needs channel 2 to be one
+your LinnStrument plays on; see Linn Ch below). `sendmidi list` shows the device's exact name. If
+this works from the computer but not from the MPC, use the MIDI jacks (Linn Port = MPC Out A).
 
 ## Guide lights
 
@@ -14,18 +53,34 @@ plugin lit.
 Fingered (only the suggested cell, in the finger's colour). **Guide Clr**:
 
 - **Played** uses the LinnStrument's own highlight: a Note On sent to the instrument lights every
-  cell of that note in your split's *Played* colour, and the Note Off clears it
-  (`ls_midi.ino`, `highlightPossibleNoteCells`). It needs no layout settings, and the cell under
-  your finger clears when you play it.
-- Any other colour paints the cells with CC 20 (column), CC 21 (row), CC 22 (colour) in the
-  firmware's custom layer, and clears them with colour 7. This needs the layout settings below.
+  cell of that note in the *Played* colour, and the Note Off clears it (`ls_midi.ino`,
+  `highlightPossibleNoteCells`). It needs no layout settings, and the cell under your finger
+  clears when you play it. It only works on a channel the instrument plays on: **Linn Ch**.
+- Any other colour paints the cells with CC 20 (column), CC 21 (row), CC 22 (colour). This needs
+  the layout settings (LAYOUT, below).
 
-**Linn Ch** is the channel for the Note On highlights: your split's main channel (1 for the left
-split in MPE mode with the factory settings).
+**Linn Ch** (default 2): in MPE mode, a per-note channel of the split you play (2 to 16 with the
+factory settings; channel 1 is the MPE main channel, which the highlight ignores). In One Channel
+mode, that channel. 0.4.0 defaulted to 1, which an MPE LinnStrument ignores.
 
 While **LISTEN** plays (PLAY page), the guide lights each note as it sounds instead of the next
-one to play, in the same colour (or by finger with Fingering on): watch the shape of a passage
-on the surface while you hear it.
+one to play: watch the shape of a passage on the surface while you hear it.
+
+## What happens to your own lights
+
+Cell paints (CC 20/21/22) go into the firmware's custom layer, the same layer as the
+LinnStrument's own custom light patterns. So the plugin paints only the cells it needs, and a
+cell it has finished with goes back to:
+
+- **Restore = Note Colors** (default): your note colours from the COLOR page, in the
+  LinnStrument's nearest colour (C cyan, D blue, E pink, F magenta, G white, A yellow, B orange;
+  C# cyan, D# blue, F# pink, G# white, A# yellow).
+- **Restore = Off**: colour 7, which turns the painted cell off and lets your normal note lights
+  show through again.
+
+Cells the plugin never painted are never written. Messages are paced to the route: up to about
+3,000 a second over USB (the instrument's USB side reaches its processor through a 115,200-baud
+serial link) and 900 a second through a DIN port (31,250 baud).
 
 ## Fingering
 
@@ -62,19 +117,21 @@ The MPC does not tell plugins about its key, so the plugin reads the project fil
 `/data/Settings/MPC/CurrentProject` names it, and the newer of the project and its autosave is
 read (gzip JSON). It re-reads every 20 seconds while Key Lights is on, and when you press
 **READ KEY**. A change of key on the MPC shows up after the MPC saves (autosave is every
-5 minutes by default; saving the project shows it at once).
+5 minutes by default; saving the project shows it at once). "No project key yet" means the
+project has not been saved since it was created.
 
 ## Note colours on the staff
 
 The COLOR page puts a dot of each note's colour in the noteheads on the MPC screen, so the staff
 speaks the same colour language as your instrument. Its palette is the LinnStrument's own colours
 (the firmware's Red, Yellow, Green, Cyan, Blue, Magenta, White, Orange, Lime, Pink) plus
-in-between hues for the black keys. The default scheme is C cyan, D blue, E pink, F magenta,
-G white, A yellow, B orange, each black key the hue halfway between its neighbours except D#,
-a deeper blue than D (halfway between blue and pink is a violet too close to F's magenta). It
-changes nothing on the LinnStrument itself.
+in-between hues for the black keys, which exist on the screen only. The default scheme is
+C cyan, D blue, E pink, F magenta, G white, A yellow, B orange; C# azure, D# navy (a deeper blue
+than D), F# a light salmon pink, G# cream, A# amber.
 
-## Layout settings
+## LAYOUT (press LINN again)
+
+![LAYOUT, Night](img/linn-layout-night.png)
 
 The plugin needs your layout to know which cell plays which note (everything except the Played
 guide uses it):
@@ -96,17 +153,15 @@ The plugin opens its own ALSA sequencer client, "Sight Reader", with two ports:
 
 - **Linn Out** cannot be subscribed to by anyone else (read-only, not exported), so light
   messages reach only the LinnStrument, never an MPC track listening to "All Ports" (where a
-  guide Note On would play a sound). The plugin subscribes it to the LinnStrument's USB port
-  itself; the kernel's USB MIDI driver only opens its output for a subscriber.
-- **MIDI Out** is listed by the MPC as a track input ("Sight Reader MIDI Out") and carries only
-  the accompaniment, when Accomp is on.
-
-Light messages are rate-limited (about 24 per audio block) so a full repaint takes a few blocks.
-This route was proven on this MPC by mpc-mpe (its ports open, the MPC detects them, channels
-survive); sending *to* the LinnStrument this way is new and untested on the device.
+  guide Note On would play a sound). The plugin subscribes it itself to the LinnStrument's USB
+  port, or to the MPC's own DIN port ("DIN-A" / "DIN-B" of the MPC's kernel MIDI client) for
+  Linn Port = MPC Out A / B. Changing Linn Port moves the subscription at once and repaints.
+- **MIDI Out** is listed by the MPC as a track input ("Sight Reader MIDI Out") and carries
+  LISTEN and Accomp.
 
 ## For a version without LinnStrument features
 
 Everything LinnStrument-specific is behind Linn Mode, in `plugin/src/sr/linn.h`, `alsa_out.h`
-and the `lightsBlock()` part of `SightReader.cpp`, plus the LINN page. A general version can drop
-the LINN page from `tools/gen_skin.py` (PAGES) and leave Linn Mode off; nothing else depends on it.
+and the `lightsBlock()` part of `SightReader.cpp`, plus the LINN and LAYOUT pages. A general
+version can drop those pages from `tools/gen_skin.py` (PAGES) and leave Linn Mode off; nothing
+else depends on it.

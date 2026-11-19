@@ -62,6 +62,11 @@ struct Slot
     uint16_t measure = 0;
     bool measureStart = false;
     uint32_t headFirst = 0, headCount = 0;   // into Score::heads
+    // Notes beyond the grid are drawn an octave or two closer (0.5.0): per staff, the shift in
+    // staff positions applied here (+7: drawn higher, sounding lower, 8vb) and the sign to show:
+    // 0 none, 1..4 the start of 8va / 8vb / 15ma / 15mb, 5..8 its dashes continuing.
+    int8_t octShift[2] = {0, 0};
+    uint8_t ott[2] = {0, 0};
 };
 
 // A notehead drawn in a slot: where it is and which note it shows (for colour dots and the
@@ -617,11 +622,50 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
             return 0;
         };
         // positions of every pitch (spelled in the measure's key)
-        auto posOf = [&](size_t yi, uint8_t pitch) {
+        auto rawPosOf = [&](size_t yi, uint8_t pitch) {
             const Sym& y = ys[yi];
             const Measure& m = sc.measures[(size_t)sc.measureAt(y.start)];
             return staffPosition(spellPitch(pitch, m.keySf, m.minor, prefOf(yi, pitch)), staff);
         };
+        // Ottava: notes beyond the grid are drawn an octave or two closer, a whole bar at a time
+        // where the bar still fits, else symbol by symbol. Never pinned to the last row.
+        std::vector<int8_t> shift(ys.size(), 0);
+        {
+            const int limLo = staff == 0 ? gen::kTrebleLowPos : gen::kBassLowPos;
+            const int limHi = staff == 0 ? gen::kTrebleTopPos : gen::kBassTopPos + 7;
+            auto shiftFor = [&](int lo, int hi, bool& fits) -> int {
+                fits = true;
+                if (lo >= limLo && hi <= limHi) return 0;
+                int sh = 0;
+                if (lo < limLo) sh = 7 * std::min(2, (limLo - lo + 6) / 7);
+                else sh = -7 * std::min(2, (hi - limHi + 6) / 7);
+                fits = lo + sh >= limLo && hi + sh <= limHi;
+                return sh;
+            };
+            auto rangeOf = [&](size_t a, size_t b, int& lo, int& hi) {
+                lo = 99; hi = -99;
+                for (size_t k = a; k < b; ++k)
+                    if (!ys[k].rest) for (uint8_t p : ys[k].pitches) { int ps = rawPosOf(k, p); lo = std::min(lo, ps); hi = std::max(hi, ps); }
+            };
+            for (size_t i = 0; i < ys.size();)
+            {
+                int mi = sc.measureAt(ys[i].start);
+                size_t j = i;
+                while (j < ys.size() && sc.measureAt(ys[j].start) == mi) ++j;
+                int lo, hi; bool fits;
+                rangeOf(i, j, lo, hi);
+                int sh = lo > hi ? 0 : shiftFor(lo, hi, fits);
+                for (size_t k = i; k < j; ++k)
+                {
+                    if (fits) { shift[k] = (int8_t)sh; continue; }
+                    int l2, h2; bool f2;
+                    rangeOf(k, k + 1, l2, h2);
+                    shift[k] = (int8_t)(l2 > h2 ? 0 : shiftFor(l2, h2, f2));
+                }
+                i = j;
+            }
+        }
+        auto posOf = [&](size_t yi, uint8_t pitch) { return rawPosOf(yi, pitch) + shift[yi]; };
 
         // beams: consecutive beamable notes inside one beat group
         for (size_t i = 0; i < ys.size();)
@@ -702,7 +746,7 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
             for (uint8_t p : y.pitches)
             {
                 Spelling sp = spellPitch(p, m.keySf, m.minor, prefOf(yi, p));
-                int pos = staffPosition(sp, staff);
+                int pos = staffPosition(sp, staff) + shift[yi];
                 int di = std::max(0, std::min(127, diatonicIndex(sp)));
                 H h; h.pos = clampPos(staff, pos); h.acc = sp.acc; h.displaced = false; h.note = noteIndex(y.segStart, hand, p);
                 h.showAcc = !y.tieIn && state[di] != sp.acc;
@@ -799,6 +843,21 @@ inline bool buildScore(const Smf& smf, const BuildOptions& opt, Score& sc, std::
                     CellSpec& tgt = grid2[(size_t)std::min<int>(nextSlot, (int)grid2.size() - 1)][(size_t)row];
                     if (tgt.kind == gen::kTie && tgt.a == 1) tgt.a = 3; else put(nextSlot, row, en);
                 }
+            }
+        }
+        // ottava signs: the start of every run of shifted symbols and of every bar in it (a screen
+        // window starts at a bar, so the sign is always on screen), dashes to the end of the run
+        for (size_t yi = 0; yi < ys.size(); ++yi)
+        {
+            if (!shift[yi]) continue;
+            int code = shift[yi] == -7 ? 1 : (shift[yi] == 7 ? 2 : (shift[yi] == -14 ? 3 : 4));
+            bool start = yi == 0 || shift[yi - 1] != shift[yi] || sc.measureAt(ys[yi - 1].start) != sc.measureAt(ys[yi].start);
+            int to = yi + 1 < ys.size() ? ys[yi + 1].slot : (int)sc.slots.size();
+            for (int s2 = ys[yi].slot; s2 < to && s2 < (int)sc.slots.size(); ++s2)
+            {
+                Slot& sl = sc.slots[(size_t)s2];
+                sl.octShift[staff] = shift[yi];
+                sl.ott[staff] = (uint8_t)(s2 == ys[yi].slot && start ? code : code + 4);
             }
         }
     }

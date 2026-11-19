@@ -144,11 +144,53 @@ mirrors the control (32 of them), or a fixed picture for controls whose value sa
 text carries units, because the MPC shows a parameter's display text without its unit label.
 Images: 66 MB decoded in all (0.1.0: 53 MB, which ran without trouble).
 
+## Moving around and pieces in order (0.5.0)
+
+**What the plugin can know of the MPC's transport.** A plugin gets the host's time info on every
+block (SDK `ctx.transport`: playing or not, song position in quarter notes, bar start, time
+signature, tempo) and nothing else: no button presses. So "the transport buttons" are followed
+through their effect. While the MPC is stopped and its song position changes, the practice
+position moves to the same bar and beat (bars counted from the sequence start with the MPC's time
+signature); a change at the moment the MPC stops is ignored, so one Stop pauses where you are;
+Stop twice is the MPC returning to the start, followed like any other move.
+
+**Fields in the header.** A field is an empty container laid over the header's pictures, with the
+data wheel's handle mapped to a parameter (Bar, Note, BPM, the title's piece number), a Q-Link
+action on touch and the large editor on double-tap or push. Its focussed background is a
+translucent tint, so a field shows when it has the wheel. Writing those parameters from the plugin
+(the fields follow the cursor) goes through `setTracked()`, which also updates the data-wheel
+helper's memory: the MPC's wheel sends a hundredth of a parameter's range per click, and
+`nudge()` turns each such small move into one step, so it must know where the value really is.
+
+**Restoring exactly.** The data-wheel helper must not take a project load for wheel clicks (a
+restored value a hundredth of the range from the current one looks like a click). The entry
+point marks `effSetChunk` (and holds a lock the worker takes when it writes list values back), so
+values come back as saved; the host simulator's save/restore check passes 12 runs in a row.
+
+**The queue and the piece list.** Loading a file copies its folder's list, in the list's order,
+into the worker's queue. The piece list on PLAY is eight text parameters and eight highlight
+pictures, shown while a parameter is on (`IndexedEnabling/1/2/<Piece List>` on the panel's
+bounds) rather than a UI-only `Local/` value, so the plugin can close it once a piece is chosen.
+The playlist is a text file of paths in `SightReader/playlist.txt`, shown as a last folder.
+
+**8va lines.** Rows exist from four ledger lines below each staff to four above it (the grid of
+pictures cannot grow). A note beyond that moves by an octave (two if needed), for the whole bar
+when the rest of the bar still fits, otherwise for that note alone; the line is a mark-layer
+picture on the slot (sign on the first slot, dashes on the rest). The layout keeps every head
+where its note sits once the octave is taken off, and a test checks it.
+
+**The LinnStrument's layer.** Cell paints (CC 20-22) go into the firmware's custom layer, shared
+with custom light patterns, so the compositor (`linn.h`) remembers which cells it ever painted,
+writes only those, and returns a cell it is finished with to a base colour (the note colours) or
+off. Messages are paced by time, not by block (the MPC's block size varies): about 3,000 a second
+by USB, whose last stage is a 115,200-baud serial link inside the instrument, and 900 a second
+through a 31,250-baud DIN port.
+
 ## Files on the MPC
 
 All inside `<drive>/SightReader/` next to `VST2 Plugins/` (the plugin finds its own folder with
 the SDK's `mpc::pluginFolder()`): `Library/<folder>/*.mid` (+ `index.tsv`), `Generated/`,
-`progress.tsv`, `days.txt`. Built-in drills are in the plugin folder's `Content/Drills/`. Nothing
+`progress.tsv`, `days.txt`, `playlist.txt` (0.5.0). Built-in drills are in the plugin folder's `Content/Drills/`. Nothing
 else is written; no system file is touched.
 
 ## Sources

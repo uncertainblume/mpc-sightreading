@@ -82,7 +82,7 @@ CONTROL = [
     ("linn_size",  "Linn Size",   "choice", (["200 (25 col)", "128 (16 col)"], 0), ""),
     ("linn_rowoff","Row Offset",  "choice", (["+5 (4ths)", "+4", "+3", "+6", "+7", "Octave"], 0), ""),
     ("linn_low",   "Lowest Note", NOTE,     (0, 72, 30), ""),
-    ("linn_ch",    "Linn Ch",     "int",    (1, 16, 1), ""),
+    ("linn_ch",    "Linn Ch",     "int",    (1, 16, 2), ""),   # 2: the first per-note channel of an MPE split
     ("linn_left",  "Left-Handed", "bool",   (0, 1, 0), ""),
     ("linn_sync",  "Read Key",    "trigger",(0, 1, 0), ""),
     # COLOR (0.2.0): note colour dots and played-note marks
@@ -108,11 +108,32 @@ CONTROL = [
     ("listen_at",  "Listen At",   "choice", (["Tempo", "25%", "50%", "75%", "100%", "125%", "150%"], 0), ""),
     ("listen_hands","Listen Hands","choice", (["Both", "Practised"], 0), ""),
     ("out_ch",     "Out Ch",      "int",    (1, 16, 1), ""),
+    # 0.5.0: header fields (tap one, turn the data wheel), loops, queue and playlist, LinnStrument
+    ("goto_bar",   "Bar",         "int",    (0, 999, 1), ""),
+    ("goto_step",  "Note",        "int",    (1, 9999, 1), ""),
+    ("bpm",        "BPM",         "int",    (20, 300, 100), ""),
+    ("loop_to",    "Loop To",     "int",    (1, 999, 4), ""),
+    ("auto_next",  "Auto Next",   "bool",   (0, 1, 1), ""),
+    ("piece",      "Piece",       "int",    (1, 999, 1), ""),
+    ("piece_go",   "Load Piece",  "trigger",(0, 1, 0), ""),
+    ("select",     "Select",      "int",    (0, 1999, 0), ""),
+] + [("pick%d" % i, "Pick %d" % (i + 1), "trigger", (0, 1, 0), "") for i in range(8)] + [
+] + [("qpick%d" % i, "Queue %d" % (i + 1), "trigger", (0, 1, 0), "") for i in range(8)] + [
+    ("pl_add",     "Add To List", "trigger",(0, 1, 0), ""),
+    ("pl_remove",  "Remove",      "trigger",(0, 1, 0), ""),
+    ("linn_port",  "Linn Port",   "choice", (["USB", "MPC Out A", "MPC Out B"], 0), ""),
+    ("linn_test",  "Test Lights", "trigger",(0, 1, 0), ""),
+    ("linn_restore","Restore",    "choice", (["Off", "Note Colors"], 1), ""),
+    # the PLAY page's piece list (the title's drop-down) is open; a parameter rather than UI-only
+    # state so the plugin can close it once a piece is chosen
+    ("qpanel",     "Piece List",  "bool",   (0, 1, 0), ""),
 ]
 
 TEXTS = ["title", "folder_name", "row0", "row1", "row2", "row3", "row4", "row5", "row6", "row7",
          "info0", "info1", "info2", "info3", "message", "stats0", "stats1", "stats2", "stats3",
-         "linn_status", "mpc_key", "gen_desc"]
+         "linn_status", "mpc_key", "gen_desc",
+         # 0.5.0: the queue drop-down on PLAY
+         "q0", "q1", "q2", "q3", "q4", "q5", "q6", "q7", "qinfo"]
 
 # Display parameters: (id prefix, count, frames)
 def display_groups():
@@ -147,6 +168,8 @@ def display_groups():
         ("nextname_lh", 1, len(G.notename_frames())),  # 0.2.0: the left hand's next note
         ("swatch", 12, G.SWATCH_FRAMES),               # 0.2.0: COLOR page swatches (mirror col_*)
         ("ro", len(readout_controls()), None),         # 0.4.0: one per control with a readout per value
+        ("rowsel", 8, 2),                              # 0.5.0: LOAD list highlight per row
+        ("qsel", 8, 3),                                # 0.5.0: queue drop-down highlight (selected / loaded)
     ]
 
 def readout_controls():

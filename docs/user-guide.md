@@ -178,9 +178,9 @@ The plugin's own sounds, all quiet by default:
 - **C ... B:** a colour for each note (sharps and flats share their key). The choices are the
   LinnStrument's colours (Red, Yellow, Green, Cyan, Blue, Magenta, White, Orange, Lime, Pink) and
   in-between ones: Azure (cyan-blue), Violet (blue-pink), Orchid (magenta-white), Cream
-  (white-yellow), Amber (yellow-orange), Navy (a deeper blue); or Off for no dot. The default: C Cyan,
-  C# Azure, D Blue, D# Navy, E Pink, F Magenta, F# Orchid, G White, G# Cream, A Yellow, A# Amber,
-  B Orange. Dark colours (Blue, Navy) get a light edge so they show on black noteheads.
+  (white-yellow), Amber (yellow-orange), Navy (a deeper blue), Salmon (a light warm pink); or Off
+  for no dot. The default: C Cyan, C# Azure, D Blue, D# Navy, E Pink, F Magenta, F# Salmon,
+  G White, G# Cream, A Yellow, A# Amber, B Orange. Dark colours (Blue, Navy) get a light edge so they show on black noteheads.
 
 The dot is sized so a half or whole note still looks hollow; on the hand you are not practising
 (Hands = Right or Left) there are no dots or marks.

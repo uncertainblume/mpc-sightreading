@@ -244,6 +244,10 @@ PALETTE = [("Off", None)] + [(n, _LS[n]) for n in ("Red", "Yellow", "Green", "Cy
     # scheme now darkens instead: D# is a deeper blue than D. Appended, so saved choices keep
     # their meaning.
     ("Navy", (22, 30, 150)),
+    # 0.5.0: F# in-between magenta and white (Orchid) sat too close to E's pink and F's magenta.
+    # A light salmon pink instead: warmer and paler than E, paler than B's orange, the green
+    # channel a touch above the blue, well away from the creams and yellows of G# to A#.
+    ("Salmon", (255, 150, 135)),
 ]
 PALETTE_NAMES = [n for n, _ in PALETTE]
 def _pal(n):
@@ -251,7 +255,7 @@ def _pal(n):
 # (param id suffix, name shown, default palette index) for C .. B
 NOTE_COLOUR_DEFAULTS = [
     ("c", "C", _pal("Cyan")), ("cs", "C#", _pal("Azure")), ("d", "D", _pal("Blue")), ("ds", "D#", _pal("Navy")),
-    ("e", "E", _pal("Pink")), ("f", "F", _pal("Magenta")), ("fs", "F#", _pal("Orchid")), ("g", "G", _pal("White")),
+    ("e", "E", _pal("Pink")), ("f", "F", _pal("Magenta")), ("fs", "F#", _pal("Salmon")), ("g", "G", _pal("White")),
     ("gs", "G#", _pal("Cream")), ("a", "A", _pal("Yellow")), ("as", "A#", _pal("Amber")), ("b", "B", _pal("Orange")),
 ]
 SWATCH_FRAMES = len(PALETTE)

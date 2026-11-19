@@ -38,7 +38,7 @@ constexpr const char* kTimeSigNames[15] = {"4/4", "3/4", "2/4", "2/2", "C", "C|"
 // tint = kMarkTintBase + ((trail*2 + place)*3 + head)*2 + tint-1 (1 green, 2 red);
 // ghost = kMarkGhostBase + (trail*2 + ledger)*4 + acc (0 none, 1 sharp, 2 flat, 3 natural);
 // ghost ledger line = kMarkGLedgerBase + trail.
-constexpr int kMarkFrames = 139, kDotColours = 16;
-constexpr int kMarkDotBase = 1, kMarkTintBase = 97, kMarkGhostBase = 121, kMarkGLedgerBase = 137;
-constexpr int kSwatchFrames = 17;
+constexpr int kMarkFrames = 145, kDotColours = 17;
+constexpr int kMarkDotBase = 1, kMarkTintBase = 103, kMarkGhostBase = 127, kMarkGLedgerBase = 143;
+constexpr int kSwatchFrames = 18;
 }} // namespace sr::gen

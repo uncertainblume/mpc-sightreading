@@ -71,18 +71,18 @@ constexpr ControlDef kControls[] = {
     {"note_colors", "Note Colors", 2, 0.0, 1.0, 1.0, "", ""},
     {"feedback", "Feedback", 3, 0, 2, 2, "", "Off|Green|Green+Red"},
     {"col_reset", "Reset Colors", 4, 0.0, 1.0, 0.0, "", ""},
-    {"col_c", "C", 3, 0, 16, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_cs", "C#", 3, 0, 16, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_d", "D", 3, 0, 16, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_ds", "D#", 3, 0, 16, 16, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_e", "E", 3, 0, 16, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_f", "F", 3, 0, 16, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_fs", "F#", 3, 0, 16, 13, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_g", "G", 3, 0, 16, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_gs", "G#", 3, 0, 16, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_a", "A", 3, 0, 16, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_as", "A#", 3, 0, 16, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
-    {"col_b", "B", 3, 0, 16, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy"},
+    {"col_c", "C", 3, 0, 17, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_cs", "C#", 3, 0, 17, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_d", "D", 3, 0, 17, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_ds", "D#", 3, 0, 17, 16, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_e", "E", 3, 0, 17, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_f", "F", 3, 0, 17, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_fs", "F#", 3, 0, 17, 17, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_g", "G", 3, 0, 17, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_gs", "G#", 3, 0, 17, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_a", "A", 3, 0, 17, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_as", "A#", 3, 0, 17, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
+    {"col_b", "B", 3, 0, 17, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
     {"snd_type", "Sound", 3, 0, 5, 0, "", "Wood|Soft Tick|Low Thud|Bell|Sine|Square"},
     {"snd_vol", "Error Vol", 1, 0.0, 100.0, 30.0, "%", ""},
     {"snd_pitch", "Pitch", 1, -24.0, 24.0, 0.0, "st", ""},
@@ -224,8 +224,8 @@ enum TextId {
     T_GEN_DESC = 21,
 };
 constexpr int kD_cell = 117, kN_cell = 660;
-constexpr int kD_mark = 777, kN_mark = 660;  // 139 frames
-constexpr int kF_mark = 139;
+constexpr int kD_mark = 777, kN_mark = 660;  // 145 frames
+constexpr int kF_mark = 145;
 constexpr int kD_overlay = 1437, kN_overlay = 20;  // 6 frames
 constexpr int kF_overlay = 6;
 constexpr int kD_mask = 1457, kN_mask = 2;  // 3 frames
@@ -277,8 +277,8 @@ constexpr int kD_d_streak = 1541, kN_d_streak = 3;  // 11 frames
 constexpr int kF_d_streak = 11;
 constexpr int kD_nextname_lh = 1544, kN_nextname_lh = 1;  // 177 frames
 constexpr int kF_nextname_lh = 177;
-constexpr int kD_swatch = 1545, kN_swatch = 12;  // 17 frames
-constexpr int kF_swatch = 17;
+constexpr int kD_swatch = 1545, kN_swatch = 12;  // 18 frames
+constexpr int kF_swatch = 18;
 constexpr int kD_ro = 1557, kN_ro = 32;
 // readouts: display parameter kD_ro + i mirrors control kRoControl[i] (value - min), kRoFrames[i] frames
 constexpr int kRoControl[32] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS};

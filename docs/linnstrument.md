@@ -31,21 +31,25 @@ sent over USB lit anything: not the plugin's paints, not its Note Ons, not singl
 by hand one second apart, and not a plain MIDI track on the MPC playing into the LinnStrument.
 The plugin was connected to the instrument's port and the kernel's byte counters for that port
 went up, so the bytes left the MPC; the LinnStrument did not act on them. The cause is not known
-yet. To find out whether the LinnStrument takes light messages at all, plug it into a computer
-and send a few. On a Mac, with [SendMIDI](https://github.com/gbevin/SendMIDI):
+yet. To find out whether the LinnStrument takes light messages at all, plug it into a Mac by USB
+and run the test script in this repository. It needs nothing installed: it talks to macOS's own
+MIDI system through the `python3` that comes with the Command Line Tools (which Homebrew installs):
 
 ```bash
-brew install gbevin/tools/sendmidi
+python3 tools/linn_test_mac.py
 ```
 
-```bash
-sendmidi dev "LinnStrument MIDI" cc 20 5 cc 21 3 cc 22 3 ch 2 on 60 100; sleep 3; sendmidi dev "LinnStrument MIDI" ch 2 off 60 0 cc 22 7
-```
+It lists the Mac's MIDI destinations, then, slowly and one message at a time: paints a row of red
+cells for three seconds (the messages Sight Reader paints with), and sends a Note On for middle C
+on channel 1 and then on channel 2 (the Played-colour highlight, for One Channel and MPE mode).
+It says what should light at each step. If this works from the Mac but not from the MPC, use the
+MIDI jacks (Linn Port = MPC Out A). If nothing lights from the Mac either, the LinnStrument itself
+is not taking these messages (check MIDI I/O = USB in its Global Settings, and its firmware).
 
-The first command installs it; the second should turn the cell in column 5, row 3 green and light
-every C4 cell in your Played colour for three seconds (the C4 highlight needs channel 2 to be one
-your LinnStrument plays on; see Linn Ch below). `sendmidi list` shows the device's exact name. If
-this works from the computer but not from the MPC, use the MIDI jacks (Linn Port = MPC Out A).
+[SendMIDI](https://github.com/gbevin/SendMIDI) does the same from the command line. Its
+Homebrew formula builds from source and needs the full Xcode, but its releases page has a ready
+Mac build (`sendmidi-macOS-<version>.zip`); macOS may quarantine a downloaded binary, which
+`xattr -d com.apple.quarantine sendmidi` lifts.
 
 ## Guide lights
 

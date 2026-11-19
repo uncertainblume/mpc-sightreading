@@ -3,7 +3,7 @@
 Written 2026-11-19 for the next working session (any model) and for the next test on the MPC.
 Read the README, then this; [design.md](design.md) has the reasoning and sources.
 
-## Status (0.3.0)
+## Status (0.4.0)
 
 **What the first test on the MPC (0.1.0, Live III) showed**
 
@@ -50,6 +50,16 @@ the cursor and halves following and stops by itself, notes played meanwhile are 
 stops it, and with Loop on it repeats. **Not tested: the MIDI actually reaching a track on the
 MPC** (no ALSA here).
 
+**0.4.0: readable controls, D# navy.** After 0.3.0 the user said the switches (three-option ones
+especially) did not show at a glance what each rounded rectangle did, and asked for specific
+readouts like the header's. Now: captions drawn into the switch and button pictures (the chosen
+one solid); a readout under every control saying what its current choice does (pictures driven by
+32 display parameters mirroring the controls; fixed pictures for knobs); values with units
+(160 ms, 30%, +2 st, Ch 1, Level 2, 3 times); the LINN and GEN pages re-laid out to make room, the
+help paragraphs they replace removed. D#'s default colour is Navy (a deeper blue than D): the
+in-between violet looked like F's magenta. Dark dot colours get a light edge. The open question
+about the unfinished sentence in the first message is dropped (the user's call).
+
 **Tested on a computer** (`tools/run_tests.sh`): unit tests under ASan/UBSan (now also: every
 drawn head maps to its note, re-strikes, wrong-note memory); the built plugin through VST2
 (LOAD, both hands' next notes, colour dots, green and red marks, the ghost note with its sharp on
@@ -63,13 +73,15 @@ its one warning is about silence). Validator: 0 errors, 0 warnings.
 Save your project first; plugins run without crash protection. Update with:
 
 ```bash
-python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.3.0-mpc.zip
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.4.0-mpc.zip
 ```
 
 It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps
 its settings (new settings start at their defaults).
 
 1. **Tabs:** PLAY, LOAD, GEN, SETUP, MORE, SOUND, COLOR, LINN, STATS, and LIGHT on PLAY's key.
+   On SETUP: can you tell at a glance what each switch's buttons do and which is chosen? Does the
+   line under each control change when you change it?
 2. **LOAD → Drills: Scales → C major scale → LOAD.** Coloured dots in the noteheads (C cyan,
    D blue...). Play C D E... on the LinnStrument: each note turns green and the cursor moves on.
    A wrong note: a red note where you played it, the error sound (a soft knock).
@@ -93,7 +105,7 @@ its settings (new settings start at their defaults).
 
 | Risk | Sign | Remedy |
 |---|---|---|
-| 1,557 parameters, 1,438 widgets on PLAY, TUI.json 1.3 MB | slow plugin load or slow switch to PLAY | the skin can lay the cell and mark grids out with the format's `repeats` feature (one row of widgets repeated 20 times, `{Increment}` parameter indices; SDK ui-reference 4.6) instead of 1,320 entries: much smaller JSON, untested on the device. Or lower `SLOTS` (20) in `tools/skin/geometry.py`: 14 slots is ~460 cells |
+| 1,589 parameters, 1,432 widgets on PLAY, TUI.json 1.3 MB, 66 MB of decoded images | slow plugin load or slow switch to PLAY | the skin can lay the cell and mark grids out with the format's `repeats` feature (one row of widgets repeated 20 times, `{Increment}` parameter indices; SDK ui-reference 4.6) instead of 1,320 entries: much smaller JSON, untested on the device. Or lower `SLOTS` (20) in `tools/skin/geometry.py`: 14 slots is ~460 cells |
 | Screen-thread cost of many picture changes | the UI lags when a half page turns | keep View = Halves or Page; Note Colors off halves the pictures changed per turn; lower the per-block budget in `pushDisplay()` |
 | MPC's film-strip RAM cache (`/var/volatile/tmp/filmstrips`) grows per screen load | `/var` fills over a day of reloads | delete `temp_*.img` there (files not open are safe to delete, per the community notes); ask before doing it |
 | `audioMasterUpdateDisplay` rebuilds the page | popups close while the list or a message updates | it is only sent when text changes, at most about 10 a second |
@@ -112,9 +124,11 @@ its settings (new settings start at their defaults).
   played them, rather than turning the written note red). Colour dots disappear once a note is
   played, so the green/red feedback and the dots never compete, and the dots lead the eye
   forward. Note Colors defaults to **on** with the user's scheme.
-- **The in-between colours** (Azure, Violet, Orchid, Cream, Amber) are halfway round the colour
-  circle between the neighbouring keys' colours (white counts as its neighbour's hue at half
-  saturation). They exist on the screen only; the LinnStrument has no such colours.
+- **The in-between colours** (Azure, Orchid, Cream, Amber) are halfway round the colour circle
+  between the neighbouring keys' colours (white counts as its neighbour's hue at half
+  saturation). D# was Violet the same way, but violet reads as F's magenta, so at the user's
+  request D# is Navy, a deeper blue than D (Violet stays in the palette). They exist on the
+  screen only; the LinnStrument has no such colours.
 - **Sounds:** Wood at 30 % of a 50 % master by default. The end-of-piece chime follows the Error
   Sound switch.
 - **"Take the settings from the sounds page"** was read as: the MPC project's key (the key the
@@ -133,7 +147,6 @@ its settings (new settings start at their defaults).
 
 ## Open questions for you
 
-- Your first message ended with "there should also be a" — what was the rest?
 - LISTEN plays the quantised notes on screen, without the file's sustain pedal or other
   controllers. Do you want the file's own timing and pedal instead (closer to a performance,
   further from the notation)?

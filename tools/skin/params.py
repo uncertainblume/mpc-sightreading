@@ -11,6 +11,7 @@ Kinds:
   display                a read-only picture parameter: the value selects a film-strip frame
 """
 import geometry as G
+import readouts as RO
 
 NOTE = "note"     # int displayed as a note name
 
@@ -145,7 +146,23 @@ def display_groups():
         ("d_streak", 3, len(G.DIGIT_FRAMES)),
         ("nextname_lh", 1, len(G.notename_frames())),  # 0.2.0: the left hand's next note
         ("swatch", 12, G.SWATCH_FRAMES),               # 0.2.0: COLOR page swatches (mirror col_*)
+        ("ro", len(readout_controls()), None),         # 0.4.0: one per control with a readout per value
     ]
+
+def readout_controls():
+    """Controls whose readout changes with the value, in parameter order: (id, number of values)."""
+    out = []
+    for (pid, name, kind, rng, unit) in CONTROL:
+        if isinstance(RO.READOUTS.get(pid), list) or isinstance(RO.SHORT.get(pid), list):
+            n = len(rng[0]) if kind == "choice" else (2 if kind in ("bool", "trigger") else int(rng[1] - rng[0] + 1))
+            for table in (RO.READOUTS, RO.SHORT):
+                if isinstance(table.get(pid), list) and len(table[pid]) != n:
+                    raise ValueError("readout %s: %d texts for %d values" % (pid, len(table[pid]), n))
+            out.append((pid, n))
+    return out
+
+def readout_index(pid):
+    return [p for p, _ in readout_controls()].index(pid)
 
 def build_index():
     """Returns {name: index} for every parameter, plus group bases."""
@@ -197,6 +214,10 @@ def write_cpp_header(path):
           ("  // %d frames" % frames if frames else ""))
         if frames:
             w("constexpr int kF_%s = %d;" % (gid, frames))
+    ro = readout_controls()
+    w("// readouts: display parameter kD_ro + i mirrors control kRoControl[i] (value - min), kRoFrames[i] frames")
+    w("constexpr int kRoControl[%d] = {%s};" % (len(ro), ", ".join("P_%s" % p.upper() for p, _ in ro)))
+    w("constexpr int kRoFrames[%d] = {%s};" % (len(ro), ", ".join(str(n) for _, n in ro)))
     w("constexpr int kDisplayBase = %d;" % INDEX["_" + display_groups()[0][0]])
     w("constexpr int kNumParams = %d;" % INDEX["_total"])
     w("}} // namespace sr::gen")

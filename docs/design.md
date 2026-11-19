@@ -42,7 +42,8 @@ Value changes reach the screen when the plugin calls `audioMasterAutomate` from 
   (`Score::heads`, tied continuations included), so the audio thread picks a mark per cell from
   the note's state without searching. Dots are drawn only in columns not yet passed, and marks
   have a lighter "trail" variant for passed columns, which keeps the strip at 7,980 px.
-- **1,557 parameters**: 95 settings, 22 texts, 1,440 display parameters (660 cells, 660 marks).
+- **1,589 parameters**: 95 settings, 22 texts, 1,472 display parameters (660 cells, 660 marks,
+  32 readouts).
   0.1.0 had 853 and the MPC handled them (and 774 widgets on PLAY) without slowing down; PLAY now
   has 1,438 widgets. Display parameters are not automatable and have constant (empty) display
   text. The MPC stores only the plugin's state chunk in a project, not per-parameter values, so
@@ -130,6 +131,18 @@ velocities, following the file's tempo map times Listen At, on the audio thread,
 and note-offs at block boundaries (under 3 ms apart at 128 samples). It ends sounding notes before
 re-striking the same pitch, at the end of the range, and whenever it stops. The engine shows its
 position on screen (`setListenSlot`) without touching the practice position.
+
+## Captions and readouts (0.4.0)
+
+Switch segments and buttons have their captions drawn into their on and off pictures, the chosen
+segment a solid fill with contrasting text, rather than a text label under a translucent button
+(0.1.0-0.3.0): nothing can cover them, and it is how the community skins do radio groups on the
+device. Under each control a readout says what the current setting does. Text from the plugin
+would need `audioMasterUpdateDisplay`, which rebuilds the page and closes the knob overlay you are
+turning, so readouts are pictures: one frame per choice, driven by a display parameter that
+mirrors the control (32 of them), or a fixed picture for controls whose value says it all. Value
+text carries units, because the MPC shows a parameter's display text without its unit label.
+Images: 66 MB decoded in all (0.1.0: 53 MB, which ran without trouble).
 
 ## Files on the MPC
 

@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 300;   // 0.3.0
+constexpr int kVersion = 400;   // 0.4.0
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -387,6 +387,21 @@ public:
         if (index == gen::P_LOOP_FROM || index == gen::P_LOOP_BARS)
         {
             char b[32]; std::snprintf(b, sizeof(b), index == gen::P_LOOP_FROM ? "Bar %d" : "%d bars", (int)std::lround(plain));
+            out = b; return true;
+        }
+        // values with their unit: the MPC shows the display text only, never the unit label
+        if (index < gen::kNumControls && gen::kControls[index].kind == gen::kInt)
+        {
+            int v = (int)std::lround(plain);
+            const std::string unit = gen::kControls[index].unit;
+            char b[32];
+            if (index == gen::P_OUT_CH || index == gen::P_LINN_CH) std::snprintf(b, sizeof(b), "Ch %d", v);
+            else if (index == gen::P_GEN_RHYTHM || index == gen::P_GEN_LEAPS) std::snprintf(b, sizeof(b), "Level %d", v);
+            else if (index == gen::P_REMIND_MAX) std::snprintf(b, sizeof(b), v == 1 ? "%d time" : "%d times", v);
+            else if (unit == "%") std::snprintf(b, sizeof(b), "%d%%", v);
+            else if (unit == "st") std::snprintf(b, sizeof(b), v ? "%+d st" : "0 st", v);
+            else if (!unit.empty()) std::snprintf(b, sizeof(b), "%d %s", v, unit.c_str());
+            else return false;
             out = b; return true;
         }
         return false;
@@ -1073,6 +1088,13 @@ private:
         setFrame(gen::kD_playedname, names == 2 ? nameFrame(lastPlayed_) : 0, gen::kNoteNameFrames);
         // COLOR page swatches
         for (int i = 0; i < 12; ++i) setFrame(gen::kD_swatch + i, (int)get(gen::P_COL_C + i), gen::kSwatchFrames);
+        // readouts under the controls: the text for each control's current value
+        for (int i = 0; i < gen::kN_ro; ++i)
+        {
+            int c = gen::kRoControl[i];
+            int v = (int)std::lround(get(c) - gen::kControls[c].min);
+            setFrame(gen::kD_ro + i, std::max(0, std::min(gen::kRoFrames[i] - 1, v)), gen::kRoFrames[i]);
+        }
         bool showFingers = getBool(gen::P_LINN) && (int)get(gen::P_LINN_FINGER) == 1;
         setFrame(gen::kD_finger + 0, showFingers ? f0 : 0, gen::kFingerFrames);
         setFrame(gen::kD_finger + 1, showFingers ? f1 : 0, gen::kFingerFrames);
@@ -1281,8 +1303,8 @@ private:
             {
                 lastLinnScan = now;
                 bool ok = alsa_.findAndConnectLinn();
-                setText(gen::T_LINN_STATUS, !alsa_.isOpen() ? "No MIDI sequencer on this system"
-                                            : (ok ? "LinnStrument connected" : "LinnStrument not found - plug it in by USB"));
+                setText(gen::T_LINN_STATUS, !alsa_.isOpen() ? "No MIDI sequencer here"
+                                            : (ok ? "LinnStrument connected" : "Not found: plug in by USB"));
             }
             // the project's key, for Key Lights
             int km = (int)get(gen::P_LINN_KEY);
@@ -1297,8 +1319,8 @@ private:
                 if (mk.valid && parseKeyName(mk.projectKey, root, mask)) { keyRoot_[0].store(root); keyMask_[0].store(mask); }
                 if (mk.valid && mk.padRoot >= 0 && parseKeyName(mk.padScale, root, mask)) { keyRoot_[1].store(root); keyMask_[1].store(mask); }
                 keyRevision_.fetch_add(1);
-                setText(gen::T_MPC_KEY, mk.valid ? ("Project key: " + (mk.projectKey.empty() ? std::string("-") : mk.projectKey) +
-                                                    "   Pad scale: " + mk.padScale) : "MPC project key not found (save the project once)");
+                setText(gen::T_MPC_KEY, mk.valid ? ("Key " + (mk.projectKey.empty() ? std::string("-") : mk.projectKey) +
+                                                    " / Pads " + mk.padScale) : "No project key yet (save once)");
             }
         }
         alsa_.close();

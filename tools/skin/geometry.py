@@ -240,17 +240,29 @@ PALETTE = [("Off", None)] + [(n, _LS[n]) for n in ("Red", "Yellow", "Green", "Cy
     ("Orchid", _between(_LS["Magenta"], _LS["White"])),    # F#: magenta - white
     ("Cream", _between(_LS["White"], _LS["Yellow"])),      # G#: white - yellow
     ("Amber", _between(_LS["Yellow"], _LS["Orange"])),     # A#: yellow - orange
+    # 0.4.0: D# halfway between blue and pink came out violet, too close to F's magenta. The
+    # scheme now darkens instead: D# is a deeper blue than D. Appended, so saved choices keep
+    # their meaning.
+    ("Navy", (22, 30, 150)),
 ]
 PALETTE_NAMES = [n for n, _ in PALETTE]
 def _pal(n):
     return PALETTE_NAMES.index(n)
 # (param id suffix, name shown, default palette index) for C .. B
 NOTE_COLOUR_DEFAULTS = [
-    ("c", "C", _pal("Cyan")), ("cs", "C#", _pal("Azure")), ("d", "D", _pal("Blue")), ("ds", "D#", _pal("Violet")),
+    ("c", "C", _pal("Cyan")), ("cs", "C#", _pal("Azure")), ("d", "D", _pal("Blue")), ("ds", "D#", _pal("Navy")),
     ("e", "E", _pal("Pink")), ("f", "F", _pal("Magenta")), ("fs", "F#", _pal("Orchid")), ("g", "G", _pal("White")),
     ("gs", "G#", _pal("Cream")), ("a", "A", _pal("Yellow")), ("as", "A#", _pal("Amber")), ("b", "B", _pal("Orange")),
 ]
 SWATCH_FRAMES = len(PALETTE)
+
+def luminance(rgb):
+    """Relative luminance (sRGB), 0..1."""
+    def lin(c):
+        c /= 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (lin(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 SOUND_TYPES = ["Wood", "Soft Tick", "Low Thud", "Bell", "Sine", "Square"]
 CLICK_TYPES = ["Tick", "Wood", "Beep"]

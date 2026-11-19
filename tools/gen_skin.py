@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(HERE, "skin"))
 import geometry as G     # noqa: E402
 import params as PR      # noqa: E402
 import render as R       # noqa: E402
+import readouts as RO    # noqa: E402
 
 ROOT = os.path.dirname(HERE)
 SKINS = os.path.join(ROOT, "plugin", "skins")
@@ -175,10 +176,9 @@ def control_slot(th, pid, x, y, kind):
         gap = 8
         w = (SLOT_W - 20 - gap) // 2
         for k, p in enumerate(pid):
-            caption = next(c for c in PR.CONTROL if c[0] == p)[1]
+            caption = next(c for c in PR.CONTROL if c[0] == p)[1].upper()
             bx = x + 10 + k * (w + gap)
-            on, off = seg_images(th, w, 56, "button")
-            out.append(label(p + "_cap", "Text", "Invalid", bx, y + 26, w, 56, 20, th.text, "horizontallyCentred verticallyCentred", "SemiBold", "Upper Case", caption))
+            on, off = caption_images(th, w, 56, "button", caption)
             out.append(button(p + "_btn", on, off, P(p), 1, 1, bx, y + 26, w, 56))
         return out, None
     idx = IDX[pid]
@@ -211,19 +211,51 @@ def control_slot(th, pid, x, y, kind):
         w = (SLOT_W - 20 - gap * (n - 1)) / n
         for k, c in enumerate(choices):
             bx = x + 10 + k * (w + gap)
-            out.append(label("%s_cap%d" % (pid, k), "Text", "Invalid", bx, y + 30, w, 50, 19 if len(c) < 8 else 16, th.text, "horizontallyCentred verticallyCentred", "SemiBold", text=c))
-        for k, c in enumerate(choices):
-            bx = x + 10 + k * (w + gap)
-            on, off = seg_images(th, int(w), 50, "segment")
+            on, off = caption_images(th, int(w), 50, "segment", c)
             out.append(button("%s_seg%d" % (pid, k), on, off, handle, k, n, bx, y + 30, w, 50))
         return out, None
     if kind in ("button", "toggle"):
-        caption = defn[1]
-        on, off = seg_images(th, SLOT_W - 20, 56, "button")
-        out = [label(pid + "_cap", "Text", "Invalid", x + 10, y + 26, SLOT_W - 20, 56, 22, th.text, "horizontallyCentred verticallyCentred", "SemiBold", "Upper Case", caption)]
-        out.append(button(pid + "_btn", on, off, handle, 1, 1, x + 10, y + 26, SLOT_W - 20, 56))
+        on, off = caption_images(th, SLOT_W - 20, 56, "button", defn[1].upper())
+        out = [button(pid + "_btn", on, off, handle, 1, 1, x + 10, y + 26, SLOT_W - 20, 56)]
         return out, None
     raise ValueError(kind)
+
+_cap_cache = {}
+def caption_images(th, w, h, style, caption):
+    """On and off pictures of a button or switch segment with its caption drawn in."""
+    key = (th.name, w, h, style, caption)
+    if key not in _cap_cache:
+        slug = "".join(ch if ch.isalnum() else "_" for ch in caption.lower())
+        on = "%s_%s_%dx%d_%s_on.png" % (th.name, style, w, h, slug)
+        off = "%s_%s_%dx%d_%s_off.png" % (th.name, style, w, h, slug)
+        R.caption_button(th.name, w, h, True, style, caption).save(os.path.join(SKINS, on), optimize=True)
+        R.caption_button(th.name, w, h, False, style, caption).save(os.path.join(SKINS, off), optimize=True)
+        _cap_cache[key] = (on, off)
+    return _cap_cache[key]
+
+_ro_cache = {}
+def readout(th, pid, x, y, w, short=False):
+    """The readout under a control: a strip bound to the control's parameter (one text per value)
+    or a fixed picture. Returns entries ([] when the control has no readout)."""
+    table = RO.SHORT if short else RO.READOUTS
+    if pid not in table:
+        return []
+    texts = table[pid]
+    size, lines, h = (13, 1, 22) if short else (14, 2, 38)
+    key = (th.name, pid, w, short)
+    if key not in _ro_cache:
+        fn = "%s_ro_%s%s_%d.png" % (th.name, pid, "_s" if short else "", w)
+        if isinstance(texts, str):
+            R.readout_image(th.name, texts, w, h, size, lines, named=False).save(os.path.join(SKINS, fn), optimize=True)
+            _ro_cache[key] = (fn, 0)
+        else:
+            img, n = R.readout_strip(th.name, texts, w, h, size, lines)
+            img.save(os.path.join(SKINS, fn), optimize=True)
+            _ro_cache[key] = (fn, n)
+    fn, n = _ro_cache[key]
+    if n == 0:
+        return [picture("ro_" + pid, fn, x, y, w, h)]
+    return [strip("ro_" + pid, fn, n, "Parameter %d" % (IDX["_ro"] + PR.readout_index(pid)), x, y, w, h)]
 
 _seg_cache = {}
 def seg_images(th, w, h, style):
@@ -238,8 +270,9 @@ def seg_images(th, w, h, style):
 
 COLS_X = [16, 332, 648, 964]
 
-def grid_page(th, layout, top=20, row_h=150, extra=()):
-    """layout: up to 4 rows of 4 (pid, kind) or None. Returns (children, local defs, q-link map)."""
+def grid_page(th, layout, top=20, row_h=150, extra=(), short=False):
+    """layout: up to 4 rows of 4 (pid, kind) or None. Returns (children, local defs, q-link map).
+    Each control gets its readout underneath (one line when short, else up to two)."""
     kids, defs = [], {}
     qmap = {}
     groups = []
@@ -250,6 +283,13 @@ def grid_page(th, layout, top=20, row_h=150, extra=()):
                 continue
             pid, kind = cell
             ents, comp = control_slot(th, pid, COLS_X[c], top + r * row_h, kind)
+            if not isinstance(pid, tuple):
+                # short: on the name line, right of the name; else under the control. Either way
+                # inside the row's Q-Link rectangle.
+                if short:
+                    ents = ents + readout(th, pid, COLS_X[c] + 80, top + r * row_h + 2, SLOT_W - 90, True)
+                else:
+                    ents = ents + readout(th, pid, COLS_X[c] + 10, top + r * row_h + 98, SLOT_W - 20)
             kids.extend(ents)
             group.extend(ents)
             if comp is not None:
@@ -361,7 +401,7 @@ def play_page(th):
         [("mode", "switch"), ("tempo", "knob"), ("hands", "switch"), ("view", "menu")],
         [("play", "toggle"), (("listen", "restart"), "pair"), ("loop", "toggle"), ("loop_from", "knob")],
     ]
-    fk, defs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118)
+    fk, defs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118, short=True)
     kids.extend(fk)
     # the lower two knob rows have no on-screen controls on this page
     for q, pid in zip([5, 6, 7, 8], ["loop_bars", "timing", "pitch_tol", "chord_tol"]):
@@ -376,7 +416,8 @@ def load_page(th):
     left = [[("folder", "knob")], [("scroll", "knob")], [("sort", "switch")]]
     group = []
     for r, row in enumerate(left):
-        ents, comp = control_slot(th, row[0][0], 12, 14 + r * 118, row[0][1])
+        ents, comp = control_slot(th, row[0][0], 12, 14 + r * 150, row[0][1])
+        ents = ents + readout(th, row[0][0], 22, 14 + r * 150 + 98, SLOT_W - 20)
         kids.extend(ents)
         group.extend(ents)
         if comp is not None:
@@ -406,13 +447,9 @@ def gen_page(th):
         [("gen_hands", "switch"), ("gen_bars", "switch"), ("gen_meter", "switch"), ("gen_range", "switch")],
         [("gen_lh", "switch"), ("gen_go", "button"), ("gen_save", "button"), None],
     ]
-    kids, defs, qmap = grid_page(th, layout, top=14, row_h=124)
-    kids.append(label("desc", "Value", P("text_gen_desc"), 16, 400, 1248, 32, 20, th.text, "left verticallyCentred", "SemiBold"))
-    kids.append(label("msg", "Value", P("text_message"), 16, 436, 1248, 30, 17, th.dim))
-    kids.extend(paragraph("help", "Rhythm 1: whole and half notes; 2: quarters; 3: eighths, dotted halves; 4: dotted rhythms, "
-                          "rests, ties; 5: sixteenths and syncopation. Leaps 1: steps and repeats; 2: thirds; 3: up to fifths; "
-                          "4: up to octaves; 5: anything in range. GENERATE makes a new exercise and loads it; SAVE keeps it in "
-                          "SightReader/Generated so its progress is tracked.", 16, 474, 1248, 16, th.dim))
+    kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
+    kids.append(label("desc", "Value", P("text_gen_desc"), 16, 470, 1248, 32, 20, th.text, "left verticallyCentred", "SemiBold"))
+    kids.append(label("msg", "Value", P("text_message"), 16, 506, 1248, 30, 17, th.dim))
     return kids, defs, qmap, grid_page.last_rects
 
 def setup_page(th):
@@ -433,10 +470,6 @@ def more_page(th):
         [("listen_at", "menu"), ("listen_hands", "switch"), ("accomp", "switch"), ("out_ch", "knob")],
     ]
     kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
-    kids.extend(paragraph("help", "Bottom row: what goes out of \"Sight Reader MIDI Out\" (set an instrument track's MIDI input to it). "
-                          "LISTEN on PLAY plays the piece there, at the Tempo knob or a fixed speed; Accomp sends the other hand while "
-                          "you practise. Range Skip: notes outside are not asked for; Hide: removed. Mask hides played notes or your bar.",
-                          16, 568, 1248, 15, th.dim, 20))
     return kids, defs, qmap, grid_page.last_rects
 
 def sound_page(th):
@@ -447,9 +480,6 @@ def sound_page(th):
         [("click_type", "switch"), ("click_vol", "knob"), ("metro", "switch"), ("count_in", "switch")],
     ]
     kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
-    kids.extend(paragraph("help", "TEST plays the sound. It sounds on a wrong or missed note, and softer (Remind Vol) on the reminders "
-                          "after a mistake. Length above zero holds it at Sustain. Master Vol sets every sound of this plugin, "
-                          "the metronome included.", 16, 572, 1248, 15, th.dim, 20))
     return kids, defs, qmap, grid_page.last_rects
 
 def color_page(th):
@@ -468,7 +498,7 @@ def color_page(th):
         kids.append(strip("sw%d" % i, sw[0], sw[1], "Parameter %d" % (IDX["_swatch"] + i), x, y, R.SWATCH_W, R.SWATCH_W))
     kids.extend(paragraph("help", "Note Colors puts a dot of each note's colour in every notehead still to be played. Feedback: "
                           "notes you play turn green, missed notes red, and a wrong note shows as a red note where you played it. "
-                          "The colours match the LinnStrument's; the five in-between ones are for the black keys.", 16, 572, 1248, 15, th.dim, 20))
+                          "The colours match the LinnStrument's; black keys get the hue between their neighbours (D# a deeper blue than D).", 16, 572, 1248, 15, th.dim, 20))
     return kids, defs, qmap, grid_page.last_rects
 
 def linn_page(th):
@@ -478,16 +508,13 @@ def linn_page(th):
         [("linn_kcol", "menu"), ("linn_sync", "button"), ("linn_size", "switch"), ("linn_rowoff", "menu")],
         [("linn_low", "knob"), ("linn_ch", "knob"), ("linn_left", "switch"), None],
     ]
-    kids, defs, qmap = grid_page(th, layout, top=8, row_h=126)
+    kids, defs, qmap = grid_page(th, layout, top=6, row_h=150)
     ls = th.img["linnstate"]
-    kids.append(strip("linnstate", ls[0], ls[1], P("_linnstate"), 964, 404, R.LINNSTATE_W, R.LINNSTATE_H))
-    kids.append(label("linn_status", "Value", P("text_linn_status"), 964, 434, 300, 28, 15, th.dim))
-    kids.append(label("mpc_key", "Value", P("text_mpc_key"), 16, 512, 1248, 28, 16, th.text))
-    kids.extend(paragraph("help", "Guide lights the next notes (Played uses the LinnStrument's own highlight colour; other colours "
-                          "paint cells). Fingering colours the suggested cell by finger: yellow thumb, green index, cyan middle, blue "
-                          "ring, magenta little. LIGHT BARS lights every note of the loop, or of the bars on screen; press again to "
-                          "clear. Key Lights paints the MPC project's key or pad scale. Your own note-light settings are never "
-                          "changed.", 16, 540, 1248, 14, th.dim, 19))
+    x0, y0 = COLS_X[3] + 10, 6 + 3 * 150
+    kids.append(label("linn_cap", "Text", "Invalid", x0, y0 + 2, SLOT_W - 20, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Status"))
+    kids.append(strip("linnstate", ls[0], ls[1], P("_linnstate"), x0, y0 + 28, R.LINNSTATE_W, R.LINNSTATE_H))
+    kids.append(label("linn_status", "Value", P("text_linn_status"), x0, y0 + 58, SLOT_W - 20, 26, 15, th.dim))
+    kids.append(label("mpc_key", "Value", P("text_mpc_key"), x0, y0 + 86, SLOT_W - 20, 26, 15, th.text))
     return kids, defs, qmap, grid_page.last_rects
 
 def stats_page(th):
@@ -577,6 +604,11 @@ def main():
            ("Program Mode Q-Links", pm))
     with open(os.path.join(SKINS, "Q-Links.json"), "w") as f:
         f.write(dump(ql))
+    # images no page uses (a theme's copy of a page that has no such theme)
+    tui_text = open(os.path.join(SKINS, "TUI.json")).read()
+    for f in os.listdir(SKINS):
+        if f.endswith(".png") and f not in tui_text:
+            os.remove(os.path.join(SKINS, f))
     total = sum(os.path.getsize(os.path.join(SKINS, f)) for f in os.listdir(SKINS))
     print("skins: %d files, %.1f KB (TUI.json %.0f KB), %d parameters" % (len(os.listdir(SKINS)), total / 1024,
           os.path.getsize(os.path.join(SKINS, "TUI.json")) / 1024, IDX["_total"]))

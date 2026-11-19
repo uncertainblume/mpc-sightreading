@@ -9,6 +9,10 @@ control (or press the data wheel) for the MPC's large editor or list. The MPC's 
 five practice presets (Wait exact, Wait relaxed, Flow medium, Rhythm strict, Rhythm slow); they
 change only practice settings.
 
+Every switch has its options written on its buttons, the chosen one filled in. Under each control
+a readout says what the current choice does, and changes as you change it; values show their
+units (160 ms, 30%, +2 st, Ch 1).
+
 ![PLAY, Night](img/play-night.png)
 
 ![LIGHT: PLAY on light paper](img/play-day.png)
@@ -164,6 +168,8 @@ The plugin's own sounds, all quiet by default:
 
 ![COLOR](img/color-night.png)
 
+![The default note colours on both themes, quarter and half notes](img/color-scheme.png)
+
 - **Note Colors:** On puts a dot of each note's colour in every notehead not yet played (the dot
   goes when the note is played, so the colours lead your eye to what comes next).
 - **Feedback:** Off; Green (played notes turn green); Green+Red (also missed notes red, and wrong
@@ -171,9 +177,10 @@ The plugin's own sounds, all quiet by default:
 - **Red Flash** as on SETUP. **RESET COLORS** brings back the default scheme.
 - **C ... B:** a colour for each note (sharps and flats share their key). The choices are the
   LinnStrument's colours (Red, Yellow, Green, Cyan, Blue, Magenta, White, Orange, Lime, Pink) and
-  five in between: Azure (cyan-blue), Violet (blue-pink), Orchid (magenta-white), Cream
-  (white-yellow), Amber (yellow-orange); or Off for no dot. The default: C Cyan, C# Azure, D Blue,
-  D# Violet, E Pink, F Magenta, F# Orchid, G White, G# Cream, A Yellow, A# Amber, B Orange.
+  in-between ones: Azure (cyan-blue), Violet (blue-pink), Orchid (magenta-white), Cream
+  (white-yellow), Amber (yellow-orange), Navy (a deeper blue); or Off for no dot. The default: C Cyan,
+  C# Azure, D Blue, D# Navy, E Pink, F Magenta, F# Orchid, G White, G# Cream, A Yellow, A# Amber,
+  B Orange. Dark colours (Blue, Navy) get a light edge so they show on black noteheads.
 
 The dot is sized so a half or whole note still looks hollow; on the hand you are not practising
 (Hands = Right or Left) there are no dots or marks.

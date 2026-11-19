@@ -236,8 +236,11 @@ def mark_image(fr, theme):
         big = Image.new("RGBA", (CW * S4, CH * S4), (0, 0, 0, 0))
         d = ImageDraw.Draw(big)
         r = DOT_SIZES[head] / 2.0 * S4
-        o = 1.0 * S4                                  # dark edge: light colours still read on light heads and paper
-        d.ellipse([cx * S4 - r - o, cy * S4 - r - o, cx * S4 + r + o, cy * S4 + r + o], fill=(16, 16, 18, 235))
+        o = 1.0 * S4
+        # a dark edge lets light colours read on light heads and paper; a light edge lets dark
+        # ones (blue, navy) read on black heads and dark paper
+        edge = (240, 240, 236, 230) if G.luminance(colour) < 0.25 else (16, 16, 18, 235)
+        d.ellipse([cx * S4 - r - o, cy * S4 - r - o, cx * S4 + r + o, cy * S4 + r + o], fill=edge)
         d.ellipse([cx * S4 - r, cy * S4 - r, cx * S4 + r, cy * S4 + r], fill=rgba(colour))
         return big.resize((CW, CH), Image.LANCZOS)
     if kind == G.MARK_TINT:
@@ -607,6 +610,66 @@ def box_image(theme, w, h, on, style="segment"):
         else:
             d.rounded_rectangle([1, 1, w * S2 - 2, h * S2 - 2], r, fill=rgba(t["text"], 10), outline=rgba(t["panel_line"]), width=2 * S2)
     return im.resize((w, h), Image.LANCZOS)
+
+def caption_button(theme, w, h, on, style, caption):
+    """A button or switch segment with its caption drawn in (0.4.0): the text is part of the
+    picture, so nothing can hide it, and the chosen segment is a solid fill with contrasting
+    text instead of a tint over a separate label."""
+    t = THEMES[theme]
+    S2 = 2
+    im = Image.new("RGBA", (w * S2, h * S2), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    r = 10 * S2
+    box = [1, 1, w * S2 - 2, h * S2 - 2]
+    if on:
+        d.rounded_rectangle(box, r, fill=rgba(t["hi"]), outline=rgba(t["hi"]), width=2 * S2)
+        col = rgba(t["paper"])
+    else:
+        d.rounded_rectangle(box, r, fill=rgba(t["text"], 16), outline=rgba(t["panel_line"]), width=2 * S2)
+        col = rgba(t["text"])
+    size = 21 if style == "button" else 19
+    while size > 11:
+        f = font("TitilliumWeb-SemiBold.ttf", size * S2)
+        if d.textlength(caption, font=f) <= (w - 10) * S2:
+            break
+        size -= 1
+    d.text((w * S2 / 2, h * S2 / 2), caption, font=f, fill=col, anchor="mm")
+    return im.resize((w, h), Image.LANCZOS)
+
+def readout_image(theme, text, w, h, size, max_lines, named=True):
+    """One readout: "Name: what it does", the name brighter (named), wrapped to max_lines."""
+    t = THEMES[theme]
+    S2 = 2
+    im = Image.new("RGBA", (w * S2, h * S2), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    bold = font("TitilliumWeb-SemiBold.ttf", size * S2)
+    reg = font("TitilliumWeb-Regular.ttf", size * S2)
+    head, sep, rest = text.partition(": ") if named else (text, "", "")
+    words = ([(wd, True) for wd in (head + ":").split()] + [(wd, False) for wd in rest.split()]) if sep else [(wd, False) for wd in text.split()]
+    lines, line, width = [], [], 0.0
+    space = d.textlength(" ", font=reg)
+    for wd, b in words:
+        wl = d.textlength(wd, font=bold if b else reg)
+        if line and width + space + wl > w * S2:
+            lines.append(line); line, width = [], 0.0
+        width += (space if line else 0) + wl
+        line.append((wd, b, wl))
+    if line:
+        lines.append(line)
+    if len(lines) > max_lines:
+        raise ValueError("readout too long for %d line(s): %r" % (max_lines, text))
+    lh = (size + 4) * S2
+    y0 = (h * S2 - lh * len(lines)) / 2 + lh / 2
+    for i, ln in enumerate(lines):
+        x = 0.0
+        for wd, b, wl in ln:
+            d.text((x, y0 + i * lh), wd, font=bold if b else reg, fill=rgba(t["text"] if b else t["text_dim"]), anchor="lm")
+            x += wl + space
+    return im.resize((w, h), Image.LANCZOS)
+
+def readout_strip(theme, texts, w, h, size, max_lines):
+    """One frame per text, for a display parameter that mirrors the control."""
+    return stack([readout_image(theme, tx, w, h, size, max_lines) for tx in texts]), len(texts)
 
 def barline_cell_strip(theme):
     """Barlines drawn at the left edge of a slot-wide frame (for repeated slot columns)."""

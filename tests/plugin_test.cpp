@@ -191,6 +191,19 @@ int main(int argc, char** argv)
     CHECK(digits(p, gen::kD_d_bars, 3) == 32);
     CHECK(p.frame(gen::kD_overlay + 0, gen::kOverlayFrames) == 1);      // cursor on the first note
 
+    // values read with their units; readouts follow their controls
+    std::printf("value texts: '%s' '%s' '%s' '%s' '%s'\n", p.text(gen::P_TIMING).c_str(), p.text(gen::P_TEMPO).c_str(),
+                p.text(gen::P_SND_PITCH).c_str(), p.text(gen::P_OUT_CH).c_str(), p.text(gen::P_GEN_RHYTHM).c_str());
+    CHECK(p.text(gen::P_TIMING) == "160 ms" && p.text(gen::P_TEMPO) == "100%" && p.text(gen::P_SND_PITCH) == "0 st");
+    CHECK(p.text(gen::P_OUT_CH) == "Ch 1" && p.text(gen::P_GEN_RHYTHM) == "Level 2");
+    {
+        int ri = -1; for (int i = 0; i < gen::kN_ro; ++i) if (gen::kRoControl[i] == gen::P_WRONG) ri = i;
+        CHECK(ri >= 0 && p.frame(gen::kD_ro + ri, gen::kRoFrames[ri]) == 1);   // Count
+        p.e->setParameter(p.e, gen::P_WRONG, 1.0f); p.run(0.05);
+        CHECK(p.frame(gen::kD_ro + ri, gen::kRoFrames[ri]) == 2);              // Stop
+        p.e->setParameter(p.e, gen::P_WRONG, 0.5f); p.run(0.05);
+    }
+    CHECK(gen::kControls[gen::P_COL_DS].def == 16);                        // D# is Navy
     // the next notes of both hands: D5 over G3 B3 D4 (the bottom of the left hand's chord)
     CHECK(p.frame(gen::kD_nextname, gen::kNoteNameFrames) == noteNameFrame(74));
     CHECK(p.frame(gen::kD_nextname_lh, gen::kNoteNameFrames) == noteNameFrame(55));
@@ -260,7 +273,7 @@ int main(int argc, char** argv)
     for (int sl = 0; sl < gen::kSlots && c5slot < 0; ++sl) if (p.frame(gen::kD_overlay + sl, gen::kOverlayFrames) == 1) c5slot = sl;
     std::printf("current column %d\n", c5slot);
     p.e->setParameter(p.e, gen::P_COL_RESET, 1.0f); p.run(0.1);
-    CHECK(std::fabs(p.e->getParameter(p.e, gen::P_COL_C) - cyan / 15.0f) < 0.01f);
+    CHECK(std::fabs(p.e->getParameter(p.e, gen::P_COL_C) - cyan / gen::kControls[gen::P_COL_C].max) < 0.01f);
     CHECK(p.e->getParameter(p.e, gen::P_COL_RESET) < 0.5f);
 
     // ---- stuck on a both-hands step: the message says the left hand is wanted -----------------

@@ -68,10 +68,11 @@ read (gzip JSON). It re-reads every 20 seconds while Key Lights is on, and when 
 
 The COLOR page puts a dot of each note's colour in the noteheads on the MPC screen, so the staff
 speaks the same colour language as your instrument. Its palette is the LinnStrument's own colours
-(the firmware's Red, Yellow, Green, Cyan, Blue, Magenta, White, Orange, Lime, Pink) plus five
+(the firmware's Red, Yellow, Green, Cyan, Blue, Magenta, White, Orange, Lime, Pink) plus
 in-between hues for the black keys. The default scheme is C cyan, D blue, E pink, F magenta,
-G white, A yellow, B orange, each black key the hue halfway between its neighbours. It changes
-nothing on the LinnStrument itself.
+G white, A yellow, B orange, each black key the hue halfway between its neighbours except D#,
+a deeper blue than D (halfway between blue and pink is a violet too close to F's magenta). It
+changes nothing on the LinnStrument itself.
 
 ## Layout settings
 

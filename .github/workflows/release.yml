@@ -1,6 +1,7 @@
 # Publishes a GitHub release for every version in CHANGELOG.md that has none yet: tag vX.Y.Z on
 # the last commit that built dist/sight-reader-X.Y.Z-mpc.zip, the zip attached, and that
-# version's CHANGELOG section as the notes. The highest version is marked Latest.
+# version's CHANGELOG section as the notes. The highest version is marked Latest. Releases that
+# exist already get their notes refreshed from CHANGELOG.md, so corrections there reach them.
 #
 # Runs on every push to main (a release is published by merging its CHANGELOG section and its
 # zip), on a pushed v* tag, and by hand (Actions -> Release -> Run workflow).
@@ -27,7 +28,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Publish the versions that have no release yet
+      - name: Publish new versions and refresh the notes of the others
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -35,9 +36,28 @@ jobs:
           VERSIONS="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ' | sort -V)"
           [ -n "$VERSIONS" ] || { echo "no versions in CHANGELOG.md"; exit 0; }
           HIGHEST="$(printf '%s\n' $VERSIONS | tail -n 1)"
+          notes() {
+            awk -v v="$1" '
+              index($0, "## [" v "]") == 1 { on = 1; next }
+              on && (/^## \[/ || /^\[[0-9]/) { exit }
+              on { print }
+            ' CHANGELOG.md > notes.md
+            {
+              echo
+              echo "### Install"
+              echo
+              echo "Needs MPC OS 3.10.1 or later with Preferences > Enhancements (Beta) > Enable Enhancements and External Plugin Support on."
+              echo "Unzip \`sight-reader-$1-mpc.zip\` and copy the folder \`Practice Tools - VST - Sight Reader\` into \`VST2 Plugins\` at the top of the MPC's internal drive, then restart the MPC app."
+              echo "Projects that already use Sight Reader keep their settings. See the [README](https://github.com/${GITHUB_REPOSITORY}/blob/v$1/README.md)."
+            } >> notes.md
+          }
           for VER in $VERSIONS; do
             TAG="v$VER"
-            if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG: released already"; continue; fi
+            notes "$VER"
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release edit "$TAG" --notes-file notes.md >/dev/null && echo "$TAG: released already, notes refreshed"
+              continue
+            fi
             ZIP="dist/sight-reader-$VER-mpc.zip"
             if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
               REF="$(git rev-list -n 1 "$TAG")"
@@ -53,19 +73,6 @@ jobs:
             fi
             if [ -z "$REF" ] || ! git cat-file -e "$REF:$ZIP" 2>/dev/null; then echo "$TAG: no $ZIP in history, skipped"; continue; fi
             git show "$REF:$ZIP" > "sight-reader-$VER-mpc.zip"
-            awk -v v="$VER" '
-              index($0, "## [" v "]") == 1 { on = 1; next }
-              on && (/^## \[/ || /^\[[0-9]/) { exit }
-              on { print }
-            ' CHANGELOG.md > notes.md
-            {
-              echo
-              echo "### Install"
-              echo
-              echo "Needs MPC OS 3.10.1 or later with Preferences > Enhancements (Beta) > Enable Enhancements and External Plugin Support on."
-              echo "Unzip \`sight-reader-$VER-mpc.zip\` and copy the folder \`Practice Tools - VST - Sight Reader\` into \`VST2 Plugins\` at the top of the MPC's internal drive, then restart the MPC app."
-              echo "Projects that already use Sight Reader keep their settings. See the [README](https://github.com/${GITHUB_REPOSITORY}/blob/$TAG/README.md)."
-            } >> notes.md
             LATEST=false; [ "$VER" = "$HIGHEST" ] && LATEST=true
             echo "$TAG: releasing $REF (latest: $LATEST)"
             gh release create "$TAG" "sight-reader-$VER-mpc.zip" --target "$REF" \

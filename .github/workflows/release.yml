@@ -1,26 +1,23 @@
-# Publishes a GitHub release for a version tag (v0.5.0 ...): the ready-to-install zip that the
-# tagged commit carries in dist/, with that version's section of CHANGELOG.md as its notes.
+# Publishes a GitHub release for every version in CHANGELOG.md that has none yet: tag vX.Y.Z on
+# the last commit that built dist/sight-reader-X.Y.Z-mpc.zip, the zip attached, and that
+# version's CHANGELOG section as the notes. The highest version is marked Latest.
 #
-# - Pushing a tag v* releases it.
-# - Run it by hand (Actions -> Release -> Run workflow) for a tag that predates this file, or to
-#   create the tag too: give the tag and the commit it should point at.
+# Runs on every push to main (a release is published by merging its CHANGELOG section and its
+# zip), on a pushed v* tag, and by hand (Actions -> Release -> Run workflow).
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Version tag, e.g. v0.4.0"
-        required: true
-      ref:
-        description: "Commit the tag points at, if the tag does not exist yet (default: the tag)"
-        required: false
-        default: ""
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -30,54 +27,40 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find the version, its commit, its zip and its notes
-        env:
-          INPUT_TAG: ${{ github.event.inputs.tag }}
-          INPUT_REF: ${{ github.event.inputs.ref }}
-        run: |
-          set -eu
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then TAG="${GITHUB_REF_NAME}"; else TAG="${INPUT_TAG}"; fi
-          case "$TAG" in v[0-9]*) ;; *) echo "not a version tag: $TAG"; exit 1;; esac
-          VER="${TAG#v}"
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then REF="$(git rev-list -n 1 "$TAG")"
-          elif [ -n "${INPUT_REF:-}" ]; then REF="$(git rev-parse "$INPUT_REF^{commit}")"
-          else echo "tag $TAG does not exist: give the commit as ref"; exit 1; fi
-          ZIP="dist/sight-reader-$VER-mpc.zip"
-          git cat-file -e "$REF:$ZIP" || { echo "$ZIP is not in $REF"; exit 1; }
-          git show "$REF:$ZIP" > "sight-reader-$VER-mpc.zip"
-          # notes: this version's section of the newest CHANGELOG.md (older commits have none)
-          git show "origin/${{ github.event.repository.default_branch }}:CHANGELOG.md" > CHANGELOG.latest 2>/dev/null || cp CHANGELOG.md CHANGELOG.latest
-          awk -v v="$VER" '
-            index($0, "## [" v "]") == 1 { on = 1; next }
-            on && (/^## \[/ || /^\[[0-9]/) { exit }
-            on { print }
-          ' CHANGELOG.latest > notes.md
-          [ -s notes.md ] || echo "Sight Reader $VER." > notes.md
-          {
-            echo
-            echo "### Install"
-            echo
-            echo "Needs MPC OS 3.10.1 or later with Preferences > Enhancements (Beta) > Enable Enhancements and External Plugin Support on."
-            echo "Unzip \`sight-reader-$VER-mpc.zip\` and copy the folder \`Practice Tools - VST - Sight Reader\` into \`VST2 Plugins\` at the top of the MPC's internal drive, then restart the MPC app."
-            echo "Projects that already use Sight Reader keep their settings. See the [README](https://github.com/${GITHUB_REPOSITORY}/blob/$TAG/README.md)."
-          } >> notes.md
-          # the highest version is marked Latest; older ones released afterwards are not
-          HIGHEST="$( (git tag -l 'v[0-9]*'; echo "$TAG") | sort -V | tail -n 1)"
-          LATEST=false; [ "$HIGHEST" = "$TAG" ] && LATEST=true
-          {
-            echo "TAG=$TAG"; echo "VER=$VER"; echo "REF=$REF"; echo "LATEST=$LATEST"
-          } >> "$GITHUB_ENV"
-          cat notes.md
-
-      - name: Create or update the release
+      - name: Publish the versions that have no release yet
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "sight-reader-$VER-mpc.zip" --clobber
-            gh release edit "$TAG" --notes-file notes.md --title "Sight Reader $VER"
-          else
+          VERSIONS="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ' | sort -V)"
+          [ -n "$VERSIONS" ] || { echo "no versions in CHANGELOG.md"; exit 0; }
+          HIGHEST="$(printf '%s\n' $VERSIONS | tail -n 1)"
+          for VER in $VERSIONS; do
+            TAG="v$VER"
+            if gh release view "$TAG" >/dev/null 2>&1; then echo "$TAG: released already"; continue; fi
+            ZIP="dist/sight-reader-$VER-mpc.zip"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              REF="$(git rev-list -n 1 "$TAG")"
+            else
+              REF="$(git log -1 --diff-filter=AM --format=%H -- "$ZIP" || true)"
+            fi
+            if [ -z "$REF" ] || ! git cat-file -e "$REF:$ZIP" 2>/dev/null; then echo "$TAG: no $ZIP in history, skipped"; continue; fi
+            git show "$REF:$ZIP" > "sight-reader-$VER-mpc.zip"
+            awk -v v="$VER" '
+              index($0, "## [" v "]") == 1 { on = 1; next }
+              on && (/^## \[/ || /^\[[0-9]/) { exit }
+              on { print }
+            ' CHANGELOG.md > notes.md
+            {
+              echo
+              echo "### Install"
+              echo
+              echo "Needs MPC OS 3.10.1 or later with Preferences > Enhancements (Beta) > Enable Enhancements and External Plugin Support on."
+              echo "Unzip \`sight-reader-$VER-mpc.zip\` and copy the folder \`Practice Tools - VST - Sight Reader\` into \`VST2 Plugins\` at the top of the MPC's internal drive, then restart the MPC app."
+              echo "Projects that already use Sight Reader keep their settings. See the [README](https://github.com/${GITHUB_REPOSITORY}/blob/$TAG/README.md)."
+            } >> notes.md
+            LATEST=false; [ "$VER" = "$HIGHEST" ] && LATEST=true
+            echo "$TAG: releasing $REF (latest: $LATEST)"
             gh release create "$TAG" "sight-reader-$VER-mpc.zip" --target "$REF" \
               --title "Sight Reader $VER" --notes-file notes.md --latest="$LATEST"
-          fi
+          done

@@ -42,7 +42,8 @@ It makes no sound of its own except the blips and an optional metronome: keep yo
 You need MPC OS 3.10.1 or later with **Preferences → Enhancements (Beta) → Enable Enhancements**
 and **External Plugin Support** switched on.
 
-1. Build it (below), or take the zip from a release when there is one.
+1. Take [dist/sight-reader-0.1.0-mpc.zip](dist/sight-reader-0.1.0-mpc.zip) (built from this commit) and unzip it,
+   or build it yourself (below).
 2. Copy the folder `Practice Tools - VST - Sight Reader` into `VST2 Plugins` at the top of the
    MPC's **internal** drive (`/nvme` on a Live III; removable drives are mounted `noexec`), or
    over the network with the SDK: `python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update plugin --yes`.

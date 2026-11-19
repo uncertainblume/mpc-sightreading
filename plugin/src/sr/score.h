@@ -143,6 +143,14 @@ inline void decompose(int32_t off, int32_t len, int32_t beat, std::vector<NoteVa
             int32_t align = c.dots ? baseU / 2 : std::min(baseU, beat);
             if (c.trip) align = u;
             if (align > 0 && off % align != 0) continue;
+            // Starting off the beat, a note must not run over the next beat (it is split and
+            // tied there instead), except the usual eighth + dotted quarter that lands on a beat.
+            int32_t inBeat = beat > 0 ? off % beat : 0;
+            if (!c.trip && inBeat != 0 && inBeat + u > beat)
+            {
+                bool syncopation = c.dots && (off + u) % beat == 0 && off % (beat / 2 > 0 ? beat / 2 : 1) == 0;
+                if (!syncopation) continue;
+            }
             NoteValue v; v.base = c.base; v.dots = c.dots; v.triplet = c.trip; v.units = u;
             out.push_back(v); off += u; len -= u; chosen = true; break;
         }

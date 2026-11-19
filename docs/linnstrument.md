@@ -24,32 +24,33 @@ surface and lights middle C with a Note On on Linn Ch, for about two seconds, wh
 Mode is on. If nothing lights, the messages are not getting through, and no other setting will
 help until they do.
 
-### Known problem: no lights over USB on the author's MPC (0.4.0 test)
+### If nothing lights: unplug it and plug it back in
 
-On an MPC Live III with a LinnStrument 200 (firmware 2.3.x, MIDI I/O = USB), nothing the MPC
-sent over USB lit anything: not the plugin's paints, not its Note Ons, not single messages sent
-by hand one second apart, and not a plain MIDI track on the MPC playing into the LinnStrument.
-The plugin was connected to the instrument's port and the kernel's byte counters for that port
-went up, so the bytes left the MPC; the LinnStrument did not act on them. The cause is not known
-yet. To find out whether the LinnStrument takes light messages at all, plug it into a Mac by USB
-and run the test script in this repository. It needs nothing installed: it talks to macOS's own
-MIDI system through the `python3` that comes with the Command Line Tools (which Homebrew installs):
+With 0.4.0 nothing the MPC sent over USB lit the author's LinnStrument 200 (firmware 2.3.x, MIDI
+I/O = USB). That included the plugin's paints and Note Ons, single messages sent by hand, and a
+plain MPC MIDI track. The bytes did leave the MPC: the kernel's byte counter for the port went up.
 
-```bash
-python3 tools/linn_test_mac.py
-```
+After installing 0.5.0, unplugging the LinnStrument from the MPC and plugging it back in was
+enough: TEST LIGHTS lit it. The same messages sent from a Mac (with
+[SendMIDI](https://github.com/gbevin/SendMIDI)) lit it too. The cause of the stuck state is not
+known yet, so if the lights stop, try these in order:
 
-It lists the Mac's MIDI destinations, then, slowly and one message at a time: paints a row of red
-cells for three seconds (the messages Sight Reader paints with), and sends a Note On for middle C
-on channel 1 and then on channel 2 (the Played-colour highlight, for One Channel and MPE mode).
-It says what should light at each step. If this works from the Mac but not from the MPC, use the
-MIDI jacks (Linn Port = MPC Out A). If nothing lights from the Mac either, the LinnStrument itself
-is not taking these messages (check MIDI I/O = USB in its Global Settings, and its firmware).
+1. Unplug the LinnStrument and plug it back in, then press TEST LIGHTS.
+2. Check Linn Ch. The Played-colour highlight only answers on a channel the instrument plays
+   on: 2 for an MPE LinnStrument.
+3. Test from a computer. SendMIDI's releases page has a ready Mac build
+   (`sendmidi-macOS-<version>.zip`; its Homebrew formula builds from source and needs the full
+   Xcode). macOS may quarantine the downloaded binary, which
+   `xattr -d com.apple.quarantine sendmidi` lifts. Then run:
 
-[SendMIDI](https://github.com/gbevin/SendMIDI) does the same from the command line. Its
-Homebrew formula builds from source and needs the full Xcode, but its releases page has a ready
-Mac build (`sendmidi-macOS-<version>.zip`); macOS may quarantine a downloaded binary, which
-`xattr -d com.apple.quarantine sendmidi` lifts.
+   ```bash
+   ./sendmidi dev "LinnStrument MIDI" cc 20 5 cc 21 3 cc 22 3 ch 2 on 60 100; sleep 3; ./sendmidi dev "LinnStrument MIDI" ch 2 off 60 0 cc 22 7
+   ```
+
+   The cell in column 5, row 3 should turn green, and every middle C should light in your Played
+   colour, for three seconds. `./sendmidi list` shows the device's exact name.
+   (`tools/linn_test_mac.py` does the same without downloading anything, but is not proven yet.)
+4. As a last resort, use the MIDI jacks (Linn Port = MPC Out A/B, above).
 
 ## Guide lights
 

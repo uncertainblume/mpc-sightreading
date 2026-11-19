@@ -3,6 +3,93 @@
 Written 2026-11-19 for the next working session (any model) and for the next test on the MPC.
 Read the README, then this; [design.md](design.md) has the reasoning and sources.
 
+## Start here (next session)
+
+**Where things are (end of 2026-11-19).**
+
+- 0.5.0 is released.
+  - `main` holds it (PRs #1-#3).
+  - GitHub releases v0.1.0 to v0.5.0 exist, each with its zip; v0.5.0 is Latest and points at
+    `main` (a9cf405).
+  - The working branch is `claude/intelligent-gauss-fy2z0x`. Its few commits after `main` are
+    the Mac test script, docs and this section; merge them into `main` when the user agrees.
+- The repository's *default* branch was still the working branch. The user was asked to switch
+  it to `main` (Settings > General); check before relying on either.
+- The user has installed 0.5.0 on the MPC and is testing it. Their notes come in as messages.
+  They often say "hold on until I say go": collect the notes, and start a version only on their
+  go.
+
+**The LinnStrument lights work over USB.** Settled at the end of 2026-11-19:
+
+- From a Mac, SendMIDI's prebuilt binary lit the LinnStrument as expected. CC 20/21/22 painted
+  the cell in column 5, row 3 green. A Note On C4 on **channel 2** highlighted every C in the
+  user's Played colour. Their LinnStrument is in MPE mode, so per-note channels highlight and
+  Linn Ch = 2 is right for them.
+- On the MPC, **0.5.0's TEST LIGHTS worked after the LinnStrument was unplugged and plugged
+  back in.**
+- Every earlier failure on the MPC therefore looks like a stuck USB state that a replug clears.
+  That covers 0.4.0's lights, hand-sent `aplaymidi` messages, an MPC MIDI track, and the first
+  TEST LIGHTS in 0.5.0. Bytes left the MPC throughout: the kernel's Tx counter for the
+  LinnStrument went up.
+- Not known yet: what gets it stuck. One guess is having the LinnStrument plugged in while the
+  MPC starts up, or for a long session.
+- Ask the user to note when lights stop working, and whether a replug always brings them back.
+  If that is the pattern, the README and linnstrument.md should say "replug the LinnStrument"
+  as the first fix. They already mention it.
+- A plugin-side "reconnect" (drop and redo the ALSA subscription, `alsa_out.h`
+  `findAndConnectLinn`) is cheap to add. A replug resets the instrument's USB side, which the
+  plugin cannot do.
+- The MIDI-jacks route (Linn Port = MPC Out A/B) is built but **untested and no longer
+  needed**. Keep it.
+
+**Still to check with the LinnStrument on the MPC** (now that lights work):
+
+- Guide = Next with Guide Clr = Played: the Note On highlights on Linn Ch 2.
+- Guide with a colour: the cell paints, which need LAYOUT to match the instrument (200, +5,
+  F#1).
+- **Restore = Note Colors.** Cells go back to the COLOR page colours, not dark. The user has a
+  custom colour scheme on the instrument, so ask whether the restored colours look right.
+- Fingering, LIGHT BARS, Key Lights (MPC Key needs a saved project), and LISTEN lighting the
+  notes as they sound.
+- The rest of 0.5.0's checklist: [Next test on the MPC](#next-test-on-the-mpc) below.
+
+**`tools/linn_test_mac.py`.**
+
+- The first version failed on the user's Mac: it listed the destinations but could not read
+  their names, so it never found the LinnStrument. SendMIDI found and drove it fine.
+- The second version is untested. It:
+  - creates the CoreMIDI client before enumerating;
+  - runs the run loop for a second;
+  - falls back from the display name to the plain name;
+  - prints the devices, and the USB tree from `ioreg` when nothing matches.
+- Low priority: the Mac test is done. Either get output from the user and fix it, or remove the
+  script and point linnstrument.md at SendMIDI's prebuilt zip only.
+
+**How releases work now.**
+
+1. Bump the version in `plugin/plugin.json`, `kVersion` in `SightReader.cpp` (e.g. 600 for
+   0.6.0) and `plugin/README.md`.
+2. Run `tools/build.sh` and `tools/run_tests.sh`. Package with the SDK's `tools/package.py`
+   (see Build in the README) and move the zip to `dist/sight-reader-X.Y.Z-mpc.zip`, removing the
+   previous zip from `dist/`.
+3. Add `## [X.Y.Z] - date` and its link line to `CHANGELOG.md`.
+4. Merge into `main` through a PR, only with the user's go.
+5. `.github/workflows/release.yml` then publishes the release by itself.
+
+From the cloud session, tags cannot be pushed (403), and the workflow cannot be started by hand
+(the integration may not dispatch workflows). That is why it runs on pushes to `main`.
+
+**Standing instructions from the user.**
+
+- Work on the branch.
+- Merge to `main` only for an approved version.
+- Never run `mpc_remote.py` add/update/remove/restart yourself. Give the user the command; they
+  update the MPC themselves. The MPC is at 192.168.1.20 on their network, which the cloud session
+  cannot reach.
+- Do not use The Session's tune database (its licence forbids processing with LLM tools).
+- Keep the user's email out of everything.
+- Commits end with the Co-Authored-By / Claude-Session lines the harness gives.
+
 ## Status (0.5.0)
 
 **What the first test on the MPC (0.1.0, Live III) showed**
@@ -79,12 +166,16 @@ testing 0.4.0 (basic practice worked well with a drill):
 - *Notes off the grid* (A1 was drawn on C#2's line in the A major LH arpeggio): they move by
   octaves under 8va / 8vb / 15ma / 15mb lines, per bar. The left-hand scale and arpeggio drills
   that ran below C2 start an octave higher.
-- *LinnStrument:* nothing lit on the user's unit over USB, from the plugin or from an MPC MIDI
-  track (bytes left the MPC; see linnstrument.md). New: **Linn Port** (USB, or the MPC's MIDI
-  Out A/B to the instrument's MIDI In), **TEST LIGHTS**, cells painted only where needed and put
-  back to the note colours (**Restore**) rather than off (paints share the layer of custom light
-  patterns), pacing per route, **Linn Ch** default 2 (an MPE LinnStrument ignores highlights on
-  channel 1), the layout settings on their own sub-page (LAYOUT).
+- *LinnStrument:* with 0.4.0 nothing lit on the user's unit over USB, from the plugin or from an
+  MPC MIDI track. Bytes left the MPC; see linnstrument.md. After 0.5.0 TEST LIGHTS worked once
+  the instrument was unplugged and plugged back in (see Start here). New in 0.5.0:
+  - **Linn Port**: USB, or the MPC's MIDI Out A/B to the instrument's MIDI In.
+  - **TEST LIGHTS**.
+  - **Restore**: cells are painted only where needed and go back to the note colours rather
+    than off (paints share the layer of custom light patterns).
+  - Pacing per route.
+  - **Linn Ch** defaults to 2: an MPE LinnStrument ignores highlights on channel 1.
+  - The layout settings are on their own sub-page (LAYOUT).
 - *Found while testing:* the data wheel's first click on Folder, Scroll and the loop jumped by a
   hundredth of the range instead of one (since 0.4.0); a project load could be misread as wheel
   clicks. Both fixed.
@@ -147,7 +238,7 @@ so set it to 2 by hand if it says Ch 1).
 | Text over 63 characters | cut off | titles and messages are kept under 60 |
 | Removable drives are `noexec` | plugin missing on a USB stick | install on the internal drive |
 | LinnStrument not found | status "not found" | check `/proc/asound/seq/clients` lists it; the plugin looks for a client name containing "LinnStrument" (USB) or a port named "DIN-A" / "DIN-B" (MPC Out A/B) |
-| LinnStrument connected but dark | TEST LIGHTS shows nothing | the 0.4.0 finding (linnstrument.md): test from a computer, then try the MIDI-jacks route |
+| LinnStrument connected but dark | TEST LIGHTS shows nothing | unplug the LinnStrument and plug it back in (that fixed it on 2026-11-19); then test from a computer (linnstrument.md); the MIDI-jacks route is the last resort |
 | The piece list does not open or close | tapping the title does nothing | it is shown while the parameter Piece List is on (`IndexedEnabling` on a parameter, as the SDK documents); if the MPC ignores it, the list can move to its own page |
 | Data wheel on the new fields steps by more than one | Bar jumps ten bars a click | the plugin turns a step of a hundredth of the range into one; if the MPC's step is different here, `nudge()` in SightReader.cpp is the place |
 

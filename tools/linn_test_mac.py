@@ -17,6 +17,7 @@ It sends what Sight Reader sends, slowly, and says what should light:
      colour, 3 seconds each (channel 1 answers in One Channel mode, channel 2 in MPE mode).
 """
 import ctypes
+import subprocess
 import sys
 import time
 
@@ -48,36 +49,52 @@ MIDIObjectGetStringProperty = fn(CM, "MIDIObjectGetStringProperty", ctypes.c_int
 MIDIPacketListInit = fn(CM, "MIDIPacketListInit", vp, vp)
 MIDIPacketListAdd = fn(CM, "MIDIPacketListAdd", vp, vp, ulong, vp, ctypes.c_uint64, ulong, vp)
 MIDISend = fn(CM, "MIDISend", ctypes.c_int32, u32, u32, vp)
+MIDIGetNumberOfSources = fn(CM, "MIDIGetNumberOfSources", ulong)
+MIDIGetNumberOfDevices = fn(CM, "MIDIGetNumberOfDevices", ulong)
+MIDIGetDevice = fn(CM, "MIDIGetDevice", u32, ulong)
+MIDIObjectGetIntegerProperty = fn(CM, "MIDIObjectGetIntegerProperty", ctypes.c_int32, u32, vp, ctypes.POINTER(ctypes.c_int32))
+CFRunLoopRunInMode = fn(CF, "CFRunLoopRunInMode", ctypes.c_int32, vp, ctypes.c_double, ctypes.c_bool)
 kMIDIPropertyDisplayName = vp.in_dll(CM, "kMIDIPropertyDisplayName").value
+kMIDIPropertyName = vp.in_dll(CM, "kMIDIPropertyName").value
+kMIDIPropertyOffline = vp.in_dll(CM, "kMIDIPropertyOffline").value
+kCFRunLoopDefaultMode = vp.in_dll(CF, "kCFRunLoopDefaultMode").value
 
 
 def cfstr(text):
     return CFStringCreateWithCString(None, text.encode("utf-8"), UTF8)
 
 
-def name_of(endpoint):
-    s = vp()
-    if MIDIObjectGetStringProperty(endpoint, kMIDIPropertyDisplayName, ctypes.byref(s)) != 0 or not s.value:
-        return "(no name)"
-    buf = ctypes.create_string_buffer(512)
-    ok = CFStringGetCString(s.value, buf, 512, UTF8)
-    CFRelease(s.value)
-    return buf.value.decode("utf-8", "replace") if ok else "(no name)"
+def name_of(obj):
+    for prop in (kMIDIPropertyDisplayName, kMIDIPropertyName):
+        s = vp()
+        if MIDIObjectGetStringProperty(obj, prop, ctypes.byref(s)) != 0 or not s.value:
+            continue
+        buf = ctypes.create_string_buffer(512)
+        ok = CFStringGetCString(s.value, buf, 512, UTF8)
+        CFRelease(s.value)
+        if ok and buf.value:
+            return buf.value.decode("utf-8", "replace")
+    return "(no name)"
+
+
+def offline(obj):
+    v = ctypes.c_int32(0)
+    return MIDIObjectGetIntegerProperty(obj, kMIDIPropertyOffline, ctypes.byref(v)) == 0 and v.value != 0
+
+
+def usb_report():
+    """What the Mac's USB sees, whatever MIDI thinks: the device tree from ioreg."""
+    try:
+        out = subprocess.run(["ioreg", "-p", "IOUSB", "-w0"], capture_output=True, text=True, timeout=10).stdout
+    except Exception as e:                # noqa: BLE001
+        return "  (could not run ioreg: %s)" % e
+    lines = [ln.split("+-o", 1)[1].split("<", 1)[0].strip() for ln in out.splitlines() if "+-o" in ln]
+    lines = [ln for ln in lines if ln and not ln.startswith("Root")]
+    return "\n".join("  - " + ln for ln in lines) if lines else "  (no USB devices listed)"
 
 
 def main():
     want = (sys.argv[1] if len(sys.argv) > 1 else "linnstrument").lower()
-    dests = [MIDIGetDestination(i) for i in range(MIDIGetNumberOfDestinations())]
-    names = [name_of(d) for d in dests]
-    print("MIDI destinations on this Mac:")
-    for n in names:
-        print("  -", n)
-    found = [(d, n) for d, n in zip(dests, names) if want in n.lower()]
-    if not found:
-        sys.exit("\nNothing with %r in its name. Is the LinnStrument plugged in by USB, with MIDI I/O = USB?" % want)
-    dest, dest_name = found[0]
-    print("\nSending to: %s\n" % dest_name)
-
     client, port = u32(), u32()
     err = MIDIClientCreate(cfstr("LinnStrument light test"), None, None, ctypes.byref(client))
     if err:
@@ -85,6 +102,31 @@ def main():
     err = MIDIOutputPortCreate(client.value, cfstr("out"), ctypes.byref(port))
     if err:
         sys.exit("MIDIOutputPortCreate failed (%d)" % err)
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 1.0, False)   # let the MIDI server finish its setup
+
+    devices = [MIDIGetDevice(i) for i in range(MIDIGetNumberOfDevices())]
+    print("MIDI devices macOS knows (as in Audio MIDI Setup > MIDI Studio):")
+    for d in devices:
+        print("  - %s%s" % (name_of(d), "   [not connected now]" if offline(d) else ""))
+    if not devices:
+        print("  (none)")
+    dests = [MIDIGetDestination(i) for i in range(MIDIGetNumberOfDestinations())]
+    names = [name_of(d) for d in dests]
+    print("MIDI destinations (what can be sent to): %d" % len(dests))
+    for n in names:
+        print("  -", n)
+    print("MIDI sources (what can send): %d" % MIDIGetNumberOfSources())
+    found = [(d, n) for d, n in zip(dests, names) if want in n.lower()]
+    if not found:
+        print("\nUSB devices the Mac sees:")
+        print(usb_report())
+        sys.exit("\nNo MIDI destination with %r in its name. If the LinnStrument is not in the USB list "
+                 "either, the Mac is not talking to it over USB: try another cable (some only charge), "
+                 "plug it straight into the Mac, and look for an 'Allow accessory to connect?' prompt "
+                 "(System Settings > Privacy & Security). If it is in the USB list but not in MIDI, "
+                 "copy all of this and send it over." % want)
+    dest, dest_name = found[0]
+    print("\nSending to: %s\n" % dest_name)
 
     def send(*msg):
         buf = ctypes.create_string_buffer(256)

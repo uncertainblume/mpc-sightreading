@@ -1,0 +1,17 @@
+{
+  "name": "Sight Reader",
+  "manufacturer": "Practice Tools",
+  "version": "0.1.0",
+  "format": "vst2",
+  "kind": "instrument",
+  "uid": "SgRd",
+  "numInputs": 0,
+  "numOutputs": 2,
+  "category": "Synth",
+  "file32": "VST/sight-reader-arm32.so",
+  "file64": "VST/sight-reader-arm64.so",
+  "description": "Sight-reading trainer: a scrolling grand staff on the MPC screen, MIDI files and generated exercises, Wait / Flow / Rhythm practice with adjustable slack, progress tracking, and LinnStrument guide lights and fingering.",
+  "author": "Practice Tools",
+  "url": "",
+  "license": "MIT"
+}

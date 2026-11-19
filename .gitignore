@@ -1,0 +1,13 @@
+# build outputs
+plugin/build/
+tests/build/
+third_party/
+.sdk-tools/
+__pycache__/
+*.pyc
+# local caches of downloaded music (tools/library.py)
+library/cache/
+library/out/
+# editor / OS
+.DS_Store
+*.swp

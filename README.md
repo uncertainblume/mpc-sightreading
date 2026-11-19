@@ -27,8 +27,9 @@ well". 0.5.0 answers the notes from that test:
 - whole folders and playlists played in order, with the title as a drop-down;
 - the data wheel's push loads a file;
 - 8va / 8vb lines for notes beyond the staff;
-- a choice of route and a light test for the LinnStrument (its lights work over USB; if they
-  stop, unplug it and plug it back in).
+- a choice of route and a light test for the LinnStrument. Its lights reach it over USB (if they
+  stop, unplug it and plug it back in), but the guide lights are not worked out yet: Next and
+  Next+1 behave oddly in 0.5.0.
 
 0.5.0 passes the SDK's validator (0 errors, 0 warnings), its host simulator, and an end-to-end
 test that plays pieces through the plugin's VST interface and checks the screen. It has not yet
@@ -73,8 +74,9 @@ Your note-light settings are never changed, and cells it lit go back to your not
 staff, every note can carry a dot of its LinnStrument colour (COLOR page), so the screen speaks
 the instrument's colour language.
 
-**If the lights do nothing:** unplug the LinnStrument and plug it back in, then press TEST LIGHTS
-(LINN page). On the author's MPC Live III the LinnStrument once stopped taking anything the MPC
+**Work in progress:** the lights reach the instrument, but in 0.5.0 the guide lights (Next and
+Next+1) still behave oddly and are being debugged. **If the lights do nothing:** unplug the
+LinnStrument and plug it back in, then press TEST LIGHTS (LINN page). On the author's MPC Live III the LinnStrument once stopped taking anything the MPC
 sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a second route. See
 [docs/linnstrument.md](docs/linnstrument.md).
 

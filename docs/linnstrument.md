@@ -5,6 +5,11 @@ can also light the instrument: the next notes to play, a whole passage, suggeste
 project's key. Switch **Linn Mode** on (LINN page). Nothing here changes your LinnStrument's own
 settings, and **CLEAR LIGHTS** takes away everything the plugin lit.
 
+> **Status (0.5.0): work in progress.** The light messages reach the LinnStrument (TEST LIGHTS
+> works; if it stops, see below), but the guide lights are not worked out: with Guide = Next and
+> Next+1 the lights change, with several odd behaviours still to debug. The rest of this page
+> describes how the features are meant to work.
+
 ![LINN, Night](img/linn-night.png)
 
 ## Connecting

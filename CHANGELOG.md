@@ -56,6 +56,8 @@ From the notes taken while practising with 0.4.0 on an MPC Live III.
   list's selection could also be rewritten while a project loaded.
 
 ### Known issues
+- The LinnStrument guide lights are not worked out yet. With Guide = Next and Next+1 the lights
+  change, but several odd behaviours remain, to be debugged in the next version.
 - A LinnStrument on the MPC's USB can get into a state where it ignores what the MPC sends. On
   the author's MPC, unplugging it and plugging it back in fixed it, and TEST LIGHTS then worked.
 - Not yet tried on the MPC at release: the new touch areas, the piece list's show/hide, and the

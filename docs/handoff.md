@@ -19,7 +19,8 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
   They often say "hold on until I say go": collect the notes, and start a version only on their
   go.
 
-**The LinnStrument lights work over USB.** Settled at the end of 2026-11-19:
+**LinnStrument lights: they reach the instrument, but the guide is not worked out yet.**
+This is where to pick up. What is settled (end of 2026-11-19):
 
 - From a Mac, SendMIDI's prebuilt binary lit the LinnStrument as expected. CC 20/21/22 painted
   the cell in column 5, row 3 green. A Note On C4 on **channel 2** highlighted every C in the
@@ -41,6 +42,46 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
   plugin cannot do.
 - The MIDI-jacks route (Linn Port = MPC Out A/B) is built but **untested and no longer
   needed**. Keep it.
+
+**What is not settled: the guide behaves oddly.** With lights working, the user tried the guide
+and reports that **Next** and **Next+1** (two ahead) behave weirdly: "light changes happen but we
+have to debug a bunch of weird behaviors". They chose to leave it for the next session. The
+behaviours have not been described in detail yet, so start by asking for each one:
+- the settings: Guide, Guide Clr, Fingering, Restore, Linn Ch, and the LAYOUT values;
+- what was on screen, what they expected to light, and what lit or went dark instead;
+- a phone video helps.
+
+Candidates to check against what they describe (from reading `lightsBlock()` in
+`SightReader.cpp` and `LinnLights` in `sr/linn.h`; none confirmed):
+- **Every cell of the pitch lights.** `setNote()` paints the note on every row it appears on
+  (several cells on a fourths layout). With Next+1 that doubles, so it can be unclear which cell
+  to play. *Fingered* lights one cell per note.
+- **Played-colour highlights and the player's own touches.** Guide Clr = Played uses Note
+  On/Off on Linn Ch.
+  - The instrument clears a highlighted cell when it is played.
+  - A Note Off from the plugin for a pitch the player is holding on the same MPE channel may
+    disturb the touch highlight.
+  - Highlights and paints are paced differently (Note Ons go at once, paints through
+    `flushLights()`), so the two can be out of step for a moment.
+- **Next+1 mixes two mechanisms.** The current step uses Note On highlights; the step after uses
+  white cell paints. A note in both steps (repeated notes, held chords) gets both.
+- **Restore = Note Colors.**
+  - A cell the guide leaves goes to the plugin's version of the note colours. The user's own
+    scheme on the instrument may differ, so cells the guide has passed can look recoloured.
+  - Restore = Off sends colour 7, which turns the painted cell off.
+- **LAYOUT mismatch.** Paints land on the wrong notes if size, row offset, lowest note
+  (octave/transpose on the instrument) or handedness differ from the instrument. Played
+  highlights do not depend on LAYOUT, so if Played looks right and colours look wrong, suspect
+  LAYOUT.
+- **When it updates.** The guide follows `engine_.currentStep()` and `nextRequiredStep()`.
+  - In Wait mode, after a wrong note or a re-strike, the guide stays.
+  - In Halves view it does not depend on the screen.
+  - Check LISTEN too: the guide shows sounding notes then.
+- **Paint ordering.** `flush()` sends CC 21 (row), CC 20 (column), CC 22 (colour) and skips CC
+  20/21 when they did not change. If the instrument loses one message (it once ignored
+  everything until replugged), every later paint could land on the wrong cell until the cursor
+  is resent. `resetCursor()` on each change would make every paint self-contained, at three
+  messages per cell.
 
 **Still to check with the LinnStrument on the MPC** (now that lights work):
 

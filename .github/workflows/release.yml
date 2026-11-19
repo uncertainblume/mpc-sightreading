@@ -43,6 +43,13 @@ jobs:
               REF="$(git rev-list -n 1 "$TAG")"
             else
               REF="$(git log -1 --diff-filter=AM --format=%H -- "$ZIP" || true)"
+              # The workflow's token may not create a tag on a commit whose workflow files differ
+              # from this one's (GitHub answers 403). If this commit still carries the same zip,
+              # tag this commit instead.
+              if [ -n "$REF" ] && ! git diff --quiet "$REF" HEAD -- .github/workflows \
+                 && [ "$(git rev-parse "$REF:$ZIP")" = "$(git rev-parse "HEAD:$ZIP" 2>/dev/null || echo none)" ]; then
+                REF="$(git rev-parse HEAD)"
+              fi
             fi
             if [ -z "$REF" ] || ! git cat-file -e "$REF:$ZIP" 2>/dev/null; then echo "$TAG: no $ZIP in history, skipped"; continue; fi
             git show "$REF:$ZIP" > "sight-reader-$VER-mpc.zip"

@@ -80,28 +80,38 @@ public:
     }
     bool isOpen() const { return seq_ != nullptr; }
 
-    // Looks for a sequencer client whose name contains "LinnStrument" (from
-    // /proc/asound/seq/clients) and subscribes Linn Out to its first writable port.
-    // Worker thread. Returns true while connected.
-    bool findAndConnectLinn()
+    // Finds where the light messages go (from /proc/asound/seq/clients) and subscribes Linn Out
+    // to it: mode 0 the LinnStrument's own USB port (a client named "...LinnStrument..."),
+    // 1 and 2 the MPC's MIDI Out A and B (hardware ports named "DIN-A" / "DIN-B"), for a
+    // LinnStrument wired by DIN. Worker thread. Returns true while connected.
+    bool findAndConnectLinn(int mode = 0)
     {
         if (!seq_ || linnPort_ < 0) return false;
         int client = -1, port = -1;
-        if (!scanProc("linnstrument", client, port))
-        {
-            if (connected_.load()) { connected_.store(false); linnClient_ = -1; }
-            return false;
+        bool found = mode == 0 ? scanProc("linnstrument", true, client, port)
+                               : scanProc(mode == 1 ? "din-a" : "din-b", false, client, port);
+        if (connected_.load() && found && client == linnClient_ && port == linnDestPort_) return true;
+        if (connected_.load())
+        {   // the place changed (or went away): let go of the old one first
+            if (api().disconnectTo) api().disconnectTo(seq_, linnPort_, linnClient_, linnDestPort_);
+            connected_.store(false); linnClient_ = -1; linnDestPort_ = -1;
         }
-        if (connected_.load() && client == linnClient_ && port == linnDestPort_) return true;
+        if (!found) return false;
         if (api().connectTo && api().connectTo(seq_, linnPort_, client, port) >= 0)
         {
             linnClient_ = client; linnDestPort_ = port;
+            linnGen_.fetch_add(1);
             connected_.store(true);
             return true;
         }
         return false;
     }
+    int linnClient() const { return linnClient_; }
+    int linnDestPort() const { return linnDestPort_; }
     bool linnConnected() const { return connected_.load(); }
+    // Goes up by one on every new connection (another port, or the instrument plugged back in),
+    // so the audio thread knows to repaint.
+    int linnGeneration() const { return linnGen_.load(); }
 
     // Audio thread: one channel message to the LinnStrument or the MIDI Out port.
     bool sendLinn(const uint8_t* m) { return connected_.load() ? sendFrom(linnPort_, m) : false; }
@@ -123,25 +133,31 @@ private:
         return api().outputDirect(seq_, &ev) >= 0;
     }
 
-    static bool scanProc(const char* needle, int& client, int& port)
+    // byClient: the needle is in the client's name (its first writable port is taken); else in
+    // a port's name. Only kernel clients (hardware) count, so the MPC application's own mirror
+    // ports ("MPC LIVE III DIN-A" in client "MPC 3") are never taken for the device.
+    static bool scanProc(const char* needle, bool byClient, int& client, int& port)
     {
         FILE* f = std::fopen("/proc/asound/seq/clients", "r");
         if (!f) return false;
-        char line[256]; int curClient = -1; bool match = false; bool found = false;
+        auto lower = [](const char* s) { std::string n(s); for (char& ch : n) ch = (char)((ch >= 'A' && ch <= 'Z') ? ch + 32 : ch); return n; };
+        char line[256]; int curClient = -1; bool kernel = false, match = false; bool found = false;
         while (std::fgets(line, sizeof(line), f))
         {
             int c; char name[200];
             if (std::sscanf(line, "Client %d : \"%199[^\"]\"", &c, name) == 2)
             {
                 curClient = c;
-                std::string n(name); for (char& ch : n) ch = (char)((ch >= 'A' && ch <= 'Z') ? ch + 32 : ch);
-                match = n.find(needle) != std::string::npos;
+                kernel = std::strstr(line, "[Kernel") != nullptr;
+                match = byClient && lower(name).find(needle) != std::string::npos;
                 continue;
             }
             int p; char pname[200]; char caps[16];
-            if (match && std::sscanf(line, " Port %d : \"%199[^\"]\" (%15[^)])", &p, pname, caps) == 3)
+            if (kernel && std::sscanf(line, " Port %d : \"%199[^\"]\" (%15[^)])", &p, pname, caps) == 3)
             {
-                if (std::strchr(caps, 'W') || std::strchr(caps, 'w')) { client = curClient; port = p; found = true; break; }
+                bool writable = std::strchr(caps, 'W') != nullptr;
+                if (writable && (match || (!byClient && lower(pname).find(needle) != std::string::npos)))
+                { client = curClient; port = p; found = true; break; }
             }
         }
         std::fclose(f);
@@ -157,6 +173,7 @@ private:
         int (*outputDirect)(void*, SeqEvent*) = nullptr;
         int (*close)(void*) = nullptr;
         int (*connectTo)(void*, int, int, int) = nullptr;
+        int (*disconnectTo)(void*, int, int, int) = nullptr;
         bool load()
         {
             if (state != 0) return state > 0;
@@ -170,6 +187,7 @@ private:
             *(void**)(&outputDirect) = dlsym(h, "snd_seq_event_output_direct");
             *(void**)(&close)        = dlsym(h, "snd_seq_close");
             *(void**)(&connectTo)    = dlsym(h, "snd_seq_connect_to");
+            *(void**)(&disconnectTo) = dlsym(h, "snd_seq_disconnect_to");
             if (open && setName && createPort && outputDirect && close) state = 1;
 #endif
             return state > 0;
@@ -181,6 +199,7 @@ private:
     int linnPort_ = -1, midiPort_ = -1;
     int linnClient_ = -1, linnDestPort_ = -1;
     std::atomic<bool> connected_{false};
+    std::atomic<int> linnGen_{0};
 };
 
 } // namespace sr

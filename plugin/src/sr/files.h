@@ -117,7 +117,7 @@ struct LibEntry
     std::string path, file, title, composer, source;
     int level = 0;
 };
-struct LibFolder { std::string name, dir; bool builtIn = false; std::vector<LibEntry> entries; };
+struct LibFolder { std::string name, dir; bool builtIn = false, playlist = false; std::vector<LibEntry> entries; };
 
 inline std::string prettyName(const std::string& file)
 {

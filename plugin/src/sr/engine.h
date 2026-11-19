@@ -69,6 +69,40 @@ public:
 
     // ---- control -----------------------------------------------------------------------------
     void restart() { resetPosition(true); }
+
+    // Moves the practice position to step s (a bar or note picked in the header, the MPC's
+    // playhead): from s on everything is open again, what came before keeps its marks. A clock
+    // that runs keeps running from there.
+    void locateStep(int s)
+    {
+        if (!score_ || score_->steps.empty()) return;
+        const int n = (int)score_->steps.size();
+        s = s < 0 ? 0 : (s >= n ? n - 1 : s);
+        for (int k = s; k < n; ++k)
+        {
+            stepState_[k] = 0;
+            if (stepWrong_) stepWrong_[k] = 0;
+            const Step& st = score_->steps[(size_t)k];
+            for (uint32_t j = 0; j < st.count; ++j) noteState_[score_->stepNotes[st.firstNote + j]] = 0;
+        }
+        step_ = s;
+        pos_ = score_->steps[(size_t)s].time - 1;
+        accompStep_ = s;
+        lastDoneStep_ = -1;
+        holdLeft_ = 0;
+        if (state_ == RunState::Done) state_ = RunState::Idle;
+        if (state_ == RunState::Holding) state_ = RunState::Running;
+        winStart_[0] = winStart_[1] = -1;
+        skipUnrequired(false, false);
+    }
+    // The first step at or after a score time (the last step when none is).
+    int stepAtOrAfter(int32_t unit) const
+    {
+        if (!score_ || score_->steps.empty()) return 0;
+        int lo = 0, hi = (int)score_->steps.size() - 1;
+        while (lo < hi) { int mid = (lo + hi) / 2; if (score_->steps[(size_t)mid].time < unit) lo = mid + 1; else hi = mid; }
+        return lo;
+    }
     void setPlaying(bool on, const EngineSettings& st)
     {
         if (!score_) return;

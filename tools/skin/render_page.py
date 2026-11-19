@@ -4,7 +4,9 @@ plugin's parameter values and texts. For checking layouts on a computer.
     python3 tools/skin/render_page.py plugin/skins/TUI.json state.json PLAY 0 out.png
 
 state.json (tests/plugin_test writes one): {"values": [...], "text": {"index": "display"}, "name": {"index": "name"}}
-Not handled: overlays, focus rings, the MPC's own chrome (tab buttons, header).
+Not handled: overlays, focus rings, the MPC's own chrome (tab buttons, header). Entries hidden by
+IndexedEnabling are left out. --set INDEX=VALUE (normalised) overrides a value, e.g. to draw the
+piece list open.
 """
 import json, os, sys
 from PIL import Image, ImageDraw, ImageFont
@@ -69,10 +71,23 @@ def draw_text(page, box, txt, ts):
     anchor = "lm" if "verticallyCentred" in just else ("lt" if "top" in just else "ls")
     d.text((tx, ty), txt, font=f, fill=colour(ts["colour"]), anchor=anchor)
 
+def visible(ctx, b):
+    """additionalInvalidatingHandles: IndexedEnabling/<i>/<n>/<handle> hides the entry unless the
+    handle is at step i of n."""
+    for h in b.get("additionalInvalidatingHandles", []):
+        parts = h.split("/", 3)
+        if parts[0] == "IndexedEnabling" and len(parts) == 4 and parts[3].startswith("Parameter "):
+            i, n, p = int(parts[1]), int(parts[2]), int(parts[3].split()[1])
+            if int(round(ctx.values[p] * (n - 1))) != i:
+                return False
+    return True
+
 def render(ctx, comps, page, ox, oy, remap):
     for e in comps:
         cd = e["componentData"]; typ = cd["type"]; data = cd["data"]
         b = e["bounds"]
+        if not visible(ctx, b):
+            continue
         x, y, w, h = [float(v) for v in b["bounds"].split()]
         x += ox; y += oy
         local = dict(remap)
@@ -130,9 +145,15 @@ def render(ctx, comps, page, ox, oy, remap):
                 d.rectangle([x, y, x + w * v - 1, y + h - 1], fill=colour(data["valueColour"]))
 
 def main():
-    tui_path, state_path, tab, sub, out = sys.argv[1:6]
+    args = [a for a in sys.argv[1:] if not a.startswith("--set")]
+    tui_path, state_path, tab, sub, out = args[:5]
     tui = json.load(open(tui_path))
     state = json.load(open(state_path))
+    for i, a in enumerate(sys.argv):
+        if a == "--set":
+            k, v = sys.argv[i + 1].split("=")
+            state["values"][int(k)] = float(v)
+    args = [a for a in args if "=" not in a]
     ctx = Ctx(tui, state, os.path.dirname(os.path.abspath(tui_path)))
     t = next(t for t in tui["pageData"]["tabs"] if t["tabName"] == tab and t["fnKeySubIndex"] == int(sub))
     comp = t["componentDefinition"]

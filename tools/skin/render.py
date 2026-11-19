@@ -28,6 +28,7 @@ U = {
     "gClef": 0xE050, "fClef": 0xE062, "brace": 0xE000,
     "timeSig0": 0xE080, "timeSigCommon": 0xE08A, "timeSigCut": 0xE08B,
     "tuplet3": 0xE883, "repeatDot": 0xE044,
+    "ottavaAlta": 0xE511, "ottavaBassaVb": 0xE51C, "quindicesimaAlta": 0xE515, "quindicesimaBassaMb": 0xE51D,
 }
 def ch(name):
     return chr(U[name])
@@ -250,6 +251,21 @@ def mark_image(fr, theme):
         a = int(255 * (theme_trail(theme) + 0.12 if trail else 1.0))
         d.text((head_x(head, place), CY), ch(HEAD_GLYPHS[head]), font=MUSIC, fill=rgba(col, a), anchor="ls",
                stroke_width=1, stroke_fill=rgba(col, a))
+        return im
+    if kind == G.MARK_OTTAVA:
+        sign, cont = x3, x4
+        ink = rgba(t["ink"])
+        d = ImageDraw.Draw(im)
+        x = 0
+        if not cont:
+            name = ["", "ottavaAlta", "ottavaBassaVb", "quindicesimaAlta", "quindicesimaBassaMb"][sign]
+            g = ch(name)
+            bb = MUSIC_SMALL.getbbox(g, anchor="ls")
+            d.text((2, CY + (bb[3] - bb[1]) // 2 - bb[3]), g, font=MUSIC_SMALL, fill=ink, anchor="ls")
+            x = 2 + (bb[2] - bb[0]) + 4
+        while x < CW:                                  # dashes on to the next column
+            d.rectangle([x, CY - 1, min(CW - 1, x + 5), CY], fill=ink)
+            x += 10
         return im
     if kind in (G.MARK_GHOST, G.MARK_GLEDGER):
         col = t["missed"]
@@ -534,9 +550,9 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------------------------
 DIGIT_W, DIGIT_H = 17, 30
 SMALL_DIGIT_W, SMALL_DIGIT_H = 9, 16
-STATUS_W, STATUS_H = 150, 40
+STATUS_W, STATUS_H = 128, 40
 HAND_W, HAND_H = 70, 22
-NOTE_W, NOTE_H = 70, 32
+NOTE_W, NOTE_H = 60, 32
 FINGER_W, FINGER_H = 22, 30
 LINNSTATE_W, LINNSTATE_H = 300, 26
 STATBAR_W, STATBAR_H = 52, 220
@@ -562,6 +578,8 @@ def ui_images(theme, out):
     save("flash", flash_strip(theme, G.TAB_W, G.GRID_BOTTOM - G.GRID_TOP), len(G.FLASH_FRAMES), G.TAB_W, G.GRID_BOTTOM - G.GRID_TOP)
     save("knob", knob_strip(theme), KNOB_FRAMES, KNOB_SIZE, KNOB_SIZE)
     save("swatch", swatch_strip(theme), G.SWATCH_FRAMES, SWATCH_W, SWATCH_W)
+    save("chevron", chevron_image(theme), 1, 16, 12)
+    save("vrule", rule_image(theme, 1, 40), 1, 1, 40)
     return meta
 
 def knob_strip(theme):
@@ -610,6 +628,39 @@ def box_image(theme, w, h, on, style="segment"):
         else:
             d.rounded_rectangle([1, 1, w * S2 - 2, h * S2 - 2], r, fill=rgba(t["text"], 10), outline=rgba(t["panel_line"]), width=2 * S2)
     return im.resize((w, h), Image.LANCZOS)
+
+def chevron_image(theme, w=16, h=12):
+    """The title's drop-down mark (0.5.0)."""
+    t = THEMES[theme]
+    S = 4
+    im = Image.new("RGBA", (w * S, h * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.line([(2 * S, 3 * S), (w * S / 2, (h - 3) * S), ((w - 2) * S, 3 * S)], fill=rgba(t["text_dim"]), width=2 * S, joint="curve")
+    return im.resize((w, h), Image.LANCZOS)
+
+def rule_image(theme, w, h):
+    t = THEMES[theme]
+    return Image.new("RGBA", (w, h), rgba(t["panel_line"]))
+
+def select_strip(theme, w, h, n):
+    """Row highlights (0.5.0): frame 0 nothing but a faint rule, 1 the loaded piece (an outline),
+    2 (or 1 when n == 2) the selection (a filled box)."""
+    t = THEMES[theme]
+    S2 = 2
+    frames = []
+    for f in range(n):
+        im = Image.new("RGBA", (w * S2, h * S2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        r = 8 * S2
+        selected = f == n - 1 and f > 0
+        if selected:
+            d.rounded_rectangle([0, 0, w * S2 - 1, h * S2 - 1], r, fill=rgba(t["hi"], 70), outline=rgba(t["hi"]), width=3 * S2)
+        elif f == 1:
+            d.rounded_rectangle([S2, S2, w * S2 - 1 - S2, h * S2 - 1 - S2], r, fill=rgba(t["text"], 14), outline=rgba(t["text_dim"]), width=2 * S2)
+        else:
+            d.line([(8 * S2, h * S2 - 2), (w * S2 - 8 * S2, h * S2 - 2)], fill=rgba(t["panel_line"]), width=S2)
+        frames.append(im.resize((w, h), Image.LANCZOS))
+    return stack(frames)
 
 def caption_button(theme, w, h, on, style, caption):
     """A button or switch segment with its caption drawn in (0.4.0): the text is part of the

@@ -110,6 +110,13 @@ int main(int argc, char** argv)
     p.d(effOpen); p.d(effSetSampleRate, 0, 0, nullptr, 44100); p.d(effSetBlockSize, 0, 128); p.d(effMainsChanged, 0, 1);
 
     p.waitWorker(1.0);
+    // built-in drill folders come first; find the library folder
+    for (int fi = 0; fi < 40; ++fi)
+    {
+        if (p.text(gen::kTextBase + gen::T_FOLDER_NAME).find("Classics") != std::string::npos) break;
+        p.e->setParameter(p.e, gen::P_FOLDER, (fi + 1) / 63.0f);
+        p.waitWorker(0.3);
+    }
     std::string row0 = p.text(gen::kTextBase + gen::T_ROW0), folder = p.text(gen::kTextBase + gen::T_FOLDER_NAME);
     std::printf("folder '%s' row0 '%s'\n", folder.c_str(), row0.c_str());
     CHECK(row0.find("Minuet") != std::string::npos);
@@ -155,6 +162,18 @@ int main(int argc, char** argv)
     dump(p, f);
     std::fprintf(f, "]}\n");
     std::fclose(f);
+    // full state for tools/skin/render_page.py
+    std::string statePath = std::string(argv[3]) + ".state.json";
+    FILE* sf = std::fopen(statePath.c_str(), "w");
+    auto esc = [](const std::string& t) { std::string o; for (char c : t) { if (c == '"' || c == '\\') o.push_back('\\'); if ((unsigned char)c >= 32) o.push_back(c); } return o; };
+    std::fprintf(sf, "{\"values\": [");
+    for (int i = 0; i < gen::kNumParams; ++i) std::fprintf(sf, "%s%.6f", i ? "," : "", (double)p.e->getParameter(p.e, i));
+    std::fprintf(sf, "], \"text\": {");
+    for (int i = 0; i < gen::kDisplayBase; ++i) std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(p.text(i)).c_str());
+    std::fprintf(sf, "}, \"name\": {");
+    for (int i = 0; i < gen::kTextBase; ++i) { char b[256] = {0}; p.d(effGetParamName, i, 0, b); std::fprintf(sf, "%s\"%d\": \"%s\"", i ? "," : "", i, esc(b).c_str()); }
+    std::fprintf(sf, "}}\n");
+    std::fclose(sf);
     std::printf("automate %d updateDisplay %d\n", g_automate, g_updates);
     p.d(effMainsChanged, 0, 0); p.d(effClose);
     std::printf("plugin_test: %s (%d failures)\n", g_fail ? "FAILED" : "ok", g_fail);

@@ -98,6 +98,23 @@ def label(name, kind, handle, x, y, w, h, size, colour, just="left verticallyCen
         pairs.append(("text", text))
     return entry(name, "Label", O(pairs), bounds(x, y, w, h))
 
+def paragraph(name, text, x, y, w, size, colour, line_h=None):
+    """Wrapped help text as one Label per line, measured with the same font the MPC uses."""
+    from PIL import ImageFont
+    f = ImageFont.truetype(os.path.join(HERE, "skin", "fonts", "TitilliumWeb-Regular.ttf"), int(size))
+    line_h = line_h or int(size * 1.35)
+    out, line = [], ""
+    for word in text.split():
+        trial = (line + " " + word).strip()
+        if f.getlength(trial) > w - 8 and line:
+            out.append(line); line = word
+        else:
+            line = trial
+    if line:
+        out.append(line)
+    return [label("%s%d" % (name, i), "Text", "Invalid", x, y + i * line_h, w, line_h, size, colour, "left verticallyCentred", text=t)
+            for i, t in enumerate(out)]
+
 def button(name, on, off, handle, bid, n, x, y, w, h, focus="No"):
     data = o(("version", 2), ("onImage", on), ("offImage", off), ("buttonId", bid), ("numButtonsInGroup", n),
              ("handleName", handle), ("gestureBehaviour", "Instant"))
@@ -292,9 +309,9 @@ def play_page(th):
     kids.append(label("title", "Value", P("text_title"), 16, 2, 560, 34, 25, th.text, "left verticallyCentred", "SemiBold"))
     kids.append(label("msg", "Value", P("text_message"), 16, 34, 560, 24, 16, th.dim))
     st = img["status"]
-    kids.append(strip("status", st[0], st[1], P("_status"), 584, 10, R.STATUS_W, R.STATUS_H))
+    kids.append(strip("status", st[0], st[1], P("_status"), 584, 2, R.STATUS_W, R.STATUS_H))
     hd = img["hand"]
-    kids.append(strip("hand", hd[0], hd[1], P("_handicon"), 624, 44, R.HAND_W, R.HAND_H))
+    kids.append(strip("hand", hd[0], hd[1], P("_handicon"), 624, 37, R.HAND_W, R.HAND_H))
     dg = img["digits"]
     def digits(group, n, x, y, cap):
         kids.append(label(group + "_cap", "Text", "Invalid", x, y - 18, 80, 18, 13, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", cap))
@@ -335,7 +352,7 @@ def play_page(th):
 def load_page(th):
     kids = []
     defs = {}
-    left = [[("folder", "menu")], [("scroll", "knob")], [("sort", "switch")]]
+    left = [[("folder", "knob")], [("scroll", "knob")], [("sort", "switch")]]
     group = []
     for r, row in enumerate(left):
         ents, comp = control_slot(th, row[0][0], 12, 14 + r * 118, row[0][1])
@@ -343,7 +360,6 @@ def load_page(th):
         group.extend(ents)
         if comp is not None:
             defs["%s_slot_%s" % (row[0][1], th.name)] = comp
-    kids.append(label("folder_name", "Value", P("text_folder_name"), 12, 376, 300, 30, 18, th.text, "left verticallyCentred", "SemiBold"))
     # the list
     x0, y0, w, h = 324, 14, 640, 58
     for r in range(8):
@@ -358,8 +374,8 @@ def load_page(th):
         ents, _ = control_slot(th, pid, 976, yy, "button")
         kids.extend(ents)
     kids.append(label("msg", "Value", P("text_message"), 324, 486, 640, 30, 17, th.dim))
-    kids.append(label("hint", "Text", "Invalid", 324, 520, 940, 60, 15, th.dim, "left verticallyCentred", text=
-                      "Tap a row, then LOAD. Q-Links: folder, scroll, row, sort. Your files: SightReader/Library/<folder>/ on this drive (tools/library.py fills it over SSH)."))
+    kids.extend(paragraph("hint", "Tap a row, then LOAD. Q-Links: folder, scroll, row, sort. Your own files go in "
+                          "SightReader/Library/<folder>/ on this drive; tools/library.py fills it over SSH. Press RESCAN after copying.", 324, 520, 940, 15, th.dim))
     qmap = {13: IDX["folder"], 14: IDX["scroll"], 15: IDX["row"], 16: IDX["sort"]}
     return kids, defs, qmap, fit_rects([group])
 
@@ -372,10 +388,10 @@ def gen_page(th):
     kids, defs, qmap = grid_page(th, layout, top=14, row_h=124)
     kids.append(label("desc", "Value", P("text_gen_desc"), 16, 400, 1248, 32, 20, th.text, "left verticallyCentred", "SemiBold"))
     kids.append(label("msg", "Value", P("text_message"), 16, 436, 1248, 30, 17, th.dim))
-    kids.append(label("help", "Text", "Invalid", 16, 474, 1248, 120, 16, th.dim, "left top", text=
-                      "Rhythm 1: whole and half notes; 2: quarters; 3: eighths, dotted halves; 4: dotted rhythms, rests, ties; 5: sixteenths and syncopation.   "
-                      "Leaps 1: steps and repeats; 2: thirds; 3: up to fifths; 4: up to octaves; 5: anything in range.   "
-                      "GENERATE makes a new exercise and loads it; SAVE keeps it in SightReader/Generated."))
+    kids.extend(paragraph("help", "Rhythm 1: whole and half notes; 2: quarters; 3: eighths, dotted halves; 4: dotted rhythms, "
+                          "rests, ties; 5: sixteenths and syncopation. Leaps 1: steps and repeats; 2: thirds; 3: up to fifths; "
+                          "4: up to octaves; 5: anything in range. GENERATE makes a new exercise and loads it; SAVE keeps it in "
+                          "SightReader/Generated so its progress is tracked.", 16, 474, 1248, 16, th.dim))
     return kids, defs, qmap, grid_page.last_rects
 
 def setup_page(th):
@@ -395,10 +411,10 @@ def more_page(th):
         [("ramp", "menu"), ("goal", "knob"), ("blip_vol", "knob"), ("loop_bars", "knob")],
     ]
     kids, defs, qmap = grid_page(th, layout, top=10, row_h=150)
-    kids.append(label("help", "Text", "Invalid", 16, 470, 1248, 130, 16, th.dim, "left top", text=
-                      "Range: notes outside it are not asked for (Skip) or removed from the score (Hide). Mask hides notes once played, or the bar you are in, so you read ahead. "
-                      "Accomp sends the other hand's notes to \"Sight Reader MIDI Out\" for an instrument track. Tempo Ramp raises the tempo after a loop pass at or above Goal. "
-                      "Split and Transpose apply to newly loaded files."))
+    kids.extend(paragraph("help", "Range: notes outside it are not asked for (Skip) or removed from the score (Hide). Mask hides "
+                          "notes once played, or the bar you are in, so you have to read ahead. Accomp sends the other hand's notes to "
+                          "\"Sight Reader MIDI Out\" for an instrument track. Tempo Ramp raises the tempo after a loop pass at or above "
+                          "Goal. Split (for one-track files) and Transpose reload the piece.", 16, 470, 1248, 16, th.dim))
     return kids, defs, qmap, grid_page.last_rects
 
 def linn_page(th):
@@ -413,10 +429,11 @@ def linn_page(th):
     kids.append(strip("linnstate", ls[0], ls[1], P("_linnstate"), 964, 404, R.LINNSTATE_W, R.LINNSTATE_H))
     kids.append(label("linn_status", "Value", P("text_linn_status"), 964, 434, 300, 28, 15, th.dim))
     kids.append(label("mpc_key", "Value", P("text_mpc_key"), 16, 512, 1248, 28, 16, th.text))
-    kids.append(label("help", "Text", "Invalid", 16, 540, 1248, 80, 14, th.dim, "left top", text=
-                      "Guide lights the next notes (Played colour uses the LinnStrument's own highlight; other colours paint cells). Fingering colours the suggested cell per finger: "
-                      "yellow thumb, green index, cyan middle, blue ring, magenta little. LIGHT BARS lights every note of the loop (or of the bars on screen); press again to clear. "
-                      "Key Lights paints the MPC project's key or pad scale. Your own note-light settings are never changed."))
+    kids.extend(paragraph("help", "Guide lights the next notes (Played uses the LinnStrument's own highlight colour; other colours "
+                          "paint cells). Fingering colours the suggested cell by finger: yellow thumb, green index, cyan middle, blue "
+                          "ring, magenta little. LIGHT BARS lights every note of the loop, or of the bars on screen; press again to "
+                          "clear. Key Lights paints the MPC project's key or pad scale. Your own note-light settings are never "
+                          "changed.", 16, 540, 1248, 14, th.dim, 19))
     return kids, defs, qmap, grid_page.last_rects
 
 def stats_page(th):

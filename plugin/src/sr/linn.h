@@ -63,11 +63,15 @@ struct Fingering
 
 inline void planFingering(const Score& sc, const LinnLayout& L, Fingering& out)
 {
+    // A hand position is the column of the index finger, h. One finger per column, like a
+    // fretting hand: right hand thumb h-1, index h, middle h+1, ring h+2, little h+3 (the left
+    // hand mirrors). Rows are reached by moving the fingers up and down, which is cheap; moving
+    // the hand along the rows is what costs. Viterbi over (cell of the step's anchor note,
+    // hand position) finds the cheapest path; the other notes of a chord go where the hand is.
     size_t n = sc.notes.size();
     out.col.assign(n, -1); out.row.assign(n, -1); out.finger.assign(n, 0);
     for (int hand = 0; hand < 2; ++hand)
     {
-        // Steps of this hand: note index lists (ascending pitch).
         std::vector<std::vector<uint32_t>> steps;
         for (const Step& st : sc.steps)
         {
@@ -76,41 +80,70 @@ inline void planFingering(const Score& sc, const LinnLayout& L, Fingering& out)
             if (!v.empty()) steps.push_back(v);
         }
         if (steps.empty()) continue;
-        // Candidate anchor cells: every cell of the lowest note of the step.
-        struct Cand { int col, row; };
-        std::vector<std::vector<Cand>> cands(steps.size());
-        int homeCol = hand == 0 ? (L.cols * 2) / 3 : L.cols / 3;    // right hand toward the right
+        const int dir = ((hand == 0) != L.leftHanded) ? 1 : -1;   // which way the fingers spread
+        auto fingerOf = [dir](int col, int h) { return (col - h) * dir + 2; };   // 1 thumb .. 5 little
+        const int homeCol = hand == 0 ? (L.cols * 2) / 3 : L.cols / 3;
+        struct State { int col, row, h; };
+        std::vector<std::vector<State>> states(steps.size());
         for (size_t s = 0; s < steps.size(); ++s)
         {
             int p = sc.notes[steps[s][0]].pitch;
-            for (int r = 0; r < L.rows; ++r) { int c = L.colFor(p, r); if (c > 0) cands[s].push_back({c, r}); }
-            if (cands[s].empty()) cands[s].push_back({-1, -1});
+            for (int r = 0; r < L.rows; ++r)
+            {
+                int c = L.colFor(p, r);
+                if (c <= 0) continue;
+                for (int f = 1; f <= 5; ++f)
+                {
+                    int h = c - (f - 2) * dir;               // hand position that puts finger f on c
+                    if (h >= 1 && h <= L.cols) states[s].push_back({c, r, h});
+                }
+            }
+            if (states[s].empty()) states[s].push_back({-1, -1, homeCol});
         }
-        // Viterbi over anchors.
+        auto local = [&](size_t s, const State& a) {
+            if (a.col < 0) return 30.0;
+            double v = 0.12 * std::abs(a.row - 3) + 0.02 * std::abs(a.h - homeCol);
+            int f = fingerOf(a.col, a.h);
+            if (f == 1) v += 0.35;                           // the thumb is the awkward one
+            // chord notes must fit the hand at this position
+            for (size_t k = 1; k < steps[s].size(); ++k)
+            {
+                int bestF = 99;
+                for (int r = 0; r < L.rows; ++r)
+                {
+                    int c = L.colFor(sc.notes[steps[s][k]].pitch, r);
+                    if (c <= 0) continue;
+                    int ff = fingerOf(c, a.h);
+                    if (ff >= 1 && ff <= 5 && std::abs(r - a.row) <= 3) bestF = std::min(bestF, ff);
+                }
+                v += bestF == 99 ? 4.0 : 0.0;
+            }
+            return v;
+        };
+        auto move = [&](const State& a, const State& b) {
+            if (a.col < 0 || b.col < 0) return 0.0;
+            double v = 0;
+            int dh = std::abs(a.h - b.h);
+            if (dh) v += 1.2 + 0.8 * dh;                    // shifting the hand
+            int dr = std::abs(a.row - b.row);
+            v += 0.25 * dr + (dr > 2 ? 1.5 * (dr - 2) : 0.0);
+            if (a.col != b.col || a.row != b.row)
+                if (fingerOf(a.col, a.h) == fingerOf(b.col, b.h)) v += 1.0;   // same finger, new cell
+            return v;
+        };
         const double kInf = 1e18;
         std::vector<std::vector<double>> cost(steps.size());
         std::vector<std::vector<int>> back(steps.size());
-        auto local = [&](const Cand& c) {
-            if (c.col < 0) return 50.0;
-            double v = 0.15 * std::abs(c.row - 3) + 0.04 * std::abs(c.col - homeCol);
-            return v;
-        };
-        auto move = [](const Cand& a, const Cand& b) {
-            if (a.col < 0 || b.col < 0) return 0.0;
-            int dc = std::abs(a.col - b.col), dr = std::abs(a.row - b.row);
-            double v = dr * 0.9 + (dc > 3 ? (dc - 3) * 1.4 : dc * 0.1);
-            if (dr >= 3) v += 2.0;                       // big vertical jumps are clumsy
-            return v;
-        };
         for (size_t s = 0; s < steps.size(); ++s)
         {
-            cost[s].assign(cands[s].size(), kInf); back[s].assign(cands[s].size(), 0);
-            for (size_t j = 0; j < cands[s].size(); ++j)
+            cost[s].assign(states[s].size(), kInf); back[s].assign(states[s].size(), 0);
+            for (size_t j = 0; j < states[s].size(); ++j)
             {
-                if (s == 0) { cost[s][j] = local(cands[s][j]); continue; }
-                for (size_t i = 0; i < cands[s - 1].size(); ++i)
+                double lc = local(s, states[s][j]);
+                if (s == 0) { cost[s][j] = lc; continue; }
+                for (size_t i = 0; i < states[s - 1].size(); ++i)
                 {
-                    double v = cost[s - 1][i] + move(cands[s - 1][i], cands[s][j]) + local(cands[s][j]);
+                    double v = cost[s - 1][i] + move(states[s - 1][i], states[s][j]) + lc;
                     if (v < cost[s][j]) { cost[s][j] = v; back[s][j] = (int)i; }
                 }
             }
@@ -118,46 +151,30 @@ inline void planFingering(const Score& sc, const LinnLayout& L, Fingering& out)
         std::vector<int> pick(steps.size(), 0);
         size_t last = steps.size() - 1;
         double best = kInf;
-        for (size_t j = 0; j < cands[last].size(); ++j) if (cost[last][j] < best) { best = cost[last][j]; pick[last] = (int)j; }
+        for (size_t j = 0; j < states[last].size(); ++j) if (cost[last][j] < best) { best = cost[last][j]; pick[last] = (int)j; }
         for (size_t s = last; s > 0; --s) pick[s - 1] = back[s][(size_t)pick[s]];
-        // Place the other chord notes near the anchor, then assign fingers by hand position.
-        int handCol = -1;
         for (size_t s = 0; s < steps.size(); ++s)
         {
-            Cand a = cands[s][(size_t)pick[s]];
-            int lo = 1 << 20, hi = -1;
+            const State& a = states[s][(size_t)pick[s]];
             for (size_t k = 0; k < steps[s].size(); ++k)
             {
                 uint32_t ni = steps[s][k];
-                int c = -1, r = -1;
-                if (k == 0) { c = a.col; r = a.row; }
-                else
-                {
-                    int bestD = 1 << 20;
+                int c = a.col, r = a.row;
+                if (k > 0)
+                {   // nearest cell inside the hand
+                    int bestD = 1 << 20; c = -1; r = -1;
                     for (int rr = 0; rr < L.rows; ++rr)
                     {
                         int cc = L.colFor(sc.notes[ni].pitch, rr);
-                        if (cc < 0 || a.col < 0) continue;
-                        int d = std::abs(cc - a.col) * 2 + std::abs(rr - a.row) * 3;
+                        if (cc <= 0 || a.col < 0) continue;
+                        int ff = fingerOf(cc, a.h);
+                        int d = (ff >= 1 && ff <= 5 ? 0 : 20) + std::abs(rr - a.row) * 2;
                         if (d < bestD) { bestD = d; c = cc; r = rr; }
                     }
                 }
                 out.col[ni] = (int8_t)c; out.row[ni] = (int8_t)r;
-                if (c > 0) { lo = std::min(lo, c); hi = std::max(hi, c); }
+                if (c > 0) { int f = fingerOf(c, a.h); out.finger[ni] = (int8_t)(f < 1 ? 1 : (f > 5 ? 5 : f)); }
             }
-            if (hi < 0) continue;
-            // Hand position: one finger per column, index finger on handCol (right hand
-            // plays index..little to the right; the left hand mirrors).
-            int dirSign = (hand == 0) != L.leftHanded ? 1 : -1;
-            auto fingerFor = [&](int c) { int f = (c - handCol) * dirSign + 2; return f < 1 ? 1 : (f > 5 ? 5 : f); };
-            bool fits = handCol > 0 && fingerFor(lo) >= 1 && (lo - handCol) * dirSign >= -1 && (lo - handCol) * dirSign <= 3 &&
-                        (hi - handCol) * dirSign >= -1 && (hi - handCol) * dirSign <= 3;
-            if (!fits)
-            {
-                if (dirSign > 0) handCol = (hi - lo <= 3) ? (handCol > 0 && lo < handCol ? lo : std::max(lo, hi - 3)) : lo + 1;
-                else handCol = (hi - lo <= 3) ? (handCol > 0 && hi > handCol ? hi : std::min(hi, lo + 3)) : hi - 1;
-            }
-            for (uint32_t ni : steps[s]) if (out.col[ni] > 0) out.finger[ni] = (int8_t)fingerFor(out.col[ni]);
         }
     }
 }

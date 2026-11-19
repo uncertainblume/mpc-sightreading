@@ -21,6 +21,7 @@
 #include <iterator>
 #include <string>
 #include <vector>
+#include <array>
 
 using namespace sr;
 
@@ -191,6 +192,48 @@ static int selftest()
         CHECK(eng.misses() == 1);                                         // D was missed
         while (frames < 29400 * 13) { eng.process(st, in, 0, 128, 44100); frames += 128; }
         CHECK(eng.state() == RunState::Done);
+    }
+    // --- LinnStrument layout (firmware: note = lowest + row * offset + col - 1) ------------------
+    {
+        LinnLayout L;                                  // 200, fourths, lowest F#1 (30)
+        CHECK(L.note(1, 0) == 30 && L.note(25, 0) == 54 && L.note(1, 1) == 35 && L.note(1, 7) == 65);
+        CHECK(L.colFor(60, 0) == -1 && L.colFor(60, 2) == 21 && L.colFor(60, 6) == 1);
+        L.leftHanded = true;
+        CHECK(L.note(25, 0) == 30 && L.colFor(30, 0) == 25);
+        L.leftHanded = false; L.cols = 16;
+        CHECK(L.colFor(50, 0) == -1 && L.colFor(45, 0) == 16);
+        // Fingering a C major scale in the right hand: one finger per column, rising
+        std::vector<SmfWriteTrack> t(1); t[0].name = "Right";
+        int scale[8] = {60, 62, 64, 65, 67, 69, 71, 72};
+        for (int i = 0; i < 8; ++i) t[0].notes.push_back({i * 96, (i + 1) * 96, (uint8_t)scale[i], 80});
+        std::vector<uint8_t> b = writeSmf(96, 100, 4, 4, 0, false, "Scale", t);
+        Smf sm; Score s2; std::string e3;
+        CHECK(parseSmf(b.data(), b.size(), sm, e3) && buildScore(sm, BuildOptions(), s2, e3));
+        LinnLayout L2; Fingering fg; planFingering(s2, L2, fg);
+        int jumps = 0;
+        for (size_t i = 0; i < s2.notes.size(); ++i)
+        {
+            CHECK(fg.col[i] > 0 && fg.finger[i] >= 1 && fg.finger[i] <= 5);
+            CHECK(L2.note(fg.col[i], fg.row[i]) == s2.notes[i].pitch);
+            if (i && std::abs(fg.col[i] - fg.col[i - 1]) > 4) ++jumps;
+        }
+        CHECK(jumps == 0);
+        // Light compositor: one note in a colour, then cleared
+        LinnLights lights; std::vector<std::array<uint8_t, 3>> sent;
+        lights.setNote(1, L2, 60, kLinnBlue);
+        lights.flush(1000, [&](const uint8_t* m) { sent.push_back({m[0], m[1], m[2]}); });
+        int painted = 0; for (auto& m : sent) if (m[1] == 22 && m[2] == kLinnBlue) ++painted;
+        int cells = 0; for (int r = 0; r < 8; ++r) if (L2.colFor(60, r) > 0) ++cells;
+        CHECK(painted == cells && cells >= 3);
+        sent.clear(); lights.clearLayer(1);
+        lights.flush(1000, [&](const uint8_t* m) { sent.push_back({m[0], m[1], m[2]}); });
+        int off = 0; for (auto& m : sent) if (m[1] == 22 && m[2] == kLinnOff) ++off;
+        CHECK(off == cells);
+        sent.clear(); lights.flush(1000, [&](const uint8_t* m) { sent.push_back({m[0], m[1], m[2]}); });
+        CHECK(sent.empty());                          // nothing changes, nothing is sent
+        std::printf("fingering:");
+        for (size_t i = 0; i < s2.notes.size(); ++i) std::printf(" %d@c%dr%d", fg.finger[i], fg.col[i], fg.row[i]);
+        std::printf("\n");
     }
     // --- generator: every combination parses and lays out ---------------------------------------
     for (int sc_i = 0; sc_i < kNumGenScales; ++sc_i)

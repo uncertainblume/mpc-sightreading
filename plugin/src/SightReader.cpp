@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 500;   // 0.5.0
+constexpr int kVersion = 501;   // 0.5.1
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -1014,6 +1014,22 @@ private:
         const double rate = usb ? 3000.0 : 900.0, cap = usb ? 12.0 : 6.0;
         linnBudget_ = std::min(cap, linnBudget_ + frames * rate / std::max(1.0, sr_));
         if (!alsa_.linnConnected() || linnBudget_ < 3.0) return;
+        // Restore = Pattern n: cells to give back are restored by having the instrument reload its
+        // stored custom pattern (NRPN 247 "active note lights preset" = 8 + n, ls_midi.ino), then
+        // what is still lit is painted again. At most every 60 ms.
+        const int restore = (int)get(gen::P_LINN_RESTORE);
+        if (restore >= 2 && lights_.reloadWanted() && sampleClock_ >= nextReloadAt_ && linnBudget_ >= 6.0)
+        {
+            const uint8_t ch = (uint8_t)(0xB0 | (((int)get(gen::P_LINN_CH) - 1) & 15));
+            const int value = 8 + (restore - 1);                 // Pattern 1 -> 9 (custom pattern 0)
+            // NRPN 247 = value, then the null NRPN so a later CC 6 is not taken as data
+            const uint8_t msgs[6][3] = {{ch, 99, 247 >> 7}, {ch, 98, 247 & 127}, {ch, 6, 0}, {ch, 38, (uint8_t)value},
+                                        {ch, 99, 127}, {ch, 98, 127}};
+            for (const auto& m : msgs) alsa_.sendLinn(m);
+            linnBudget_ -= 6.0;
+            lights_.afterReload();
+            nextReloadAt_ = sampleClock_ + (uint64_t)(0.06 * sr_);
+        }
         int sent = lights_.flush((int)linnBudget_, [this](const uint8_t* m) { alsa_.sendLinn(m); });
         linnBudget_ -= sent;
     }
@@ -1033,11 +1049,13 @@ private:
         for (int i = 0; i < 12; ++i) mix((int)get(gen::P_COL_C + i));
         if (sig == baseSig_) return;
         baseSig_ = sig;
+        lights_.setIdle(kLinnClear);
+        lights_.setReloadMode(restore >= 2);
         for (int r = 0; r < LinnLights::kRows; ++r)
             for (int c = 1; c < LinnLights::kCols; ++c)
             {
                 uint8_t colour = 0;
-                if (restore == 1 && c <= L.cols && r < L.rows)
+                if (restore == 1 && c <= L.cols && r < L.rows)   // Note Colors
                 {
                     int pal = (int)get(gen::P_COL_C + ((L.note(c, r) % 12) + 12) % 12);
                     colour = kPalToLinn[std::max(0, std::min(17, pal))];
@@ -1182,7 +1200,10 @@ private:
                     wantCol[wantCount] = ni < current_->fing.col.size() ? current_->fing.col[ni] : -1;
                     wantRow[wantCount] = ni < current_->fing.row.size() ? current_->fing.row[ni] : -1;
                     int f = ni < current_->fing.finger.size() ? current_->fing.finger[ni] : 0;
-                    wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f] : (pass == 1 ? (uint8_t)kLinnWhite : (gcol == 0 ? 0 : kLinnColourChoice[gcol - 1]));
+                    // Played (gcol 0): both steps are Note On highlights, which the instrument keeps
+                    // apart from your own light pattern (0.5.1); with a colour, the step after is white
+                    wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f]
+                                          : (gcol == 0 ? 0 : (pass == 1 ? (uint8_t)kLinnWhite : kLinnColourChoice[gcol - 1]));
                     ++wantCount;
                 });
                 s = engine_.nextRequiredStep(s + 1);
@@ -2124,6 +2145,7 @@ private:
     int lastCursorStep_ = -1, stoppedBlocks_ = 0, linnGenSeen_ = -1;
     uint64_t sampleClock_ = 0, autoNextAt_ = 0, testUntil_ = 0, testWaitUntil_ = 0;
     double linnBudget_ = 0;
+    uint64_t nextReloadAt_ = 0;
     int testCh_ = 0;
     double lastPpq_ = -1;
     uint32_t baseSig_ = 0;

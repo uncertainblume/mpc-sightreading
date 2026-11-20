@@ -586,7 +586,7 @@ def linn_page(th):
     layout = [
         [("linn", "switch"), ("linn_port", "switch"), ("linn_test", "button"), None],
         [("linn_guide", "menu"), ("linn_gcol", "menu"), ("linn_finger", "switch"), ("linn_ch", "knob")],
-        [("linn_sect", "button"), ("linn_scol", "menu"), ("linn_clear", "button"), ("linn_restore", "switch")],
+        [("linn_sect", "button"), ("linn_scol", "menu"), ("linn_clear", "button"), ("linn_restore", "menu")],
         [("linn_key", "menu"), ("linn_kcol", "menu"), ("linn_sync", "button"), None],
     ]
     kids, defs, qmap = grid_page(th, layout, top=6, row_h=150)

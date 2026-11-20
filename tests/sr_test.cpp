@@ -318,8 +318,8 @@ static int selftest()
         CHECK(painted == cells && cells >= 3);
         sent.clear(); lights.clearLayer(1);
         lights.flush(1000, [&](const uint8_t* m) { sent.push_back({m[0], m[1], m[2]}); });
-        int off = 0; for (auto& m : sent) if (m[1] == 22 && m[2] == kLinnOff) ++off;
-        CHECK(off == cells);
+        int off = 0; for (auto& m : sent) if (m[1] == 22 && m[2] == kLinnClear) ++off;
+        CHECK(off == cells);                          // handed back (0), not painted black (7)
         sent.clear(); lights.flush(1000, [&](const uint8_t* m) { sent.push_back({m[0], m[1], m[2]}); });
         CHECK(sent.empty());                          // nothing changes, nothing is sent
         std::printf("fingering:");
@@ -384,6 +384,24 @@ static int selftest()
         sent.clear(); l2.invalidate(); l2.resetCursor(); l2.flush(1000, rec);
         int paints = 0; for (auto& m : sent) if (m[1] == 22) ++paints;
         CHECK(paints == 1 && l2.touchedCount() == 1);         // only the cell it ever used
+        // 0.5.1, Restore = Pattern: cells are given back by a pattern reload, not by paints
+        {
+            LinnLights l3; std::vector<std::array<uint8_t, 3>> got;
+            auto rec3 = [&](const uint8_t* m) { got.push_back({m[0], m[1], m[2]}); };
+            l3.setReloadMode(true);
+            l3.setCell(2, 5, 3, kLinnRed); l3.setCell(2, 6, 3, kLinnRed);
+            l3.flush(1000, rec3);
+            CHECK(got.size() == 5 && !l3.reloadWanted());      // two paints: row, col, colour, col, colour
+            got.clear(); l3.setCell(2, 5, 3, 0);                 // the guide lets go of one cell
+            l3.flush(1000, rec3);
+            CHECK(got.empty() && l3.reloadWanted());             // no paint: a reload is asked for
+            l3.afterReload();                                    // the instrument shows its pattern again
+            l3.flush(1000, rec3);
+            int p22 = 0; for (auto& m : got) if (m[1] == 22) { ++p22; CHECK(m[2] == kLinnRed); }
+            CHECK(p22 == 1 && !l3.reloadWanted());               // only the cell still lit is repainted
+            got.clear(); l3.flush(1000, rec3);
+            CHECK(got.empty());
+        }
         // pacing: a flush never sends part of a cell
         sent.clear(); for (int c = 1; c <= 10; ++c) l2.setCell(3, c, c % 8, kLinnGreen);
         int n = l2.flush(3, rec);

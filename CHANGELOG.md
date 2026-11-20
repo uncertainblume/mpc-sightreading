@@ -1,9 +1,33 @@
 # Changelog
 
 Each version's zip is attached to its [GitHub release](https://github.com/uncertainblume/mpc-sightreading/releases)
-(tags `v0.1.0` ... `v0.5.0`). Install or update by copying the folder in the zip to `VST2 Plugins`
+(tags `v0.1.0` ... `v0.5.1`). Install or update by copying the folder in the zip to `VST2 Plugins`
 on the MPC's internal drive; projects keep their settings, and new settings start at their
 defaults.
+
+## [0.5.1] - 2026-11-20
+
+Your LinnStrument's own colour layout no longer drifts while you play.
+
+### Fixed
+- **Guide lights left cells recoloured.** Cells the guide had lit came back in the plugin's
+  approximation of your note colours (white, orange and so on), not your own layout, so over a
+  longer piece the layout drifted. The cause, from the firmware: the plugin's cell paints go into
+  the same light layer as the instrument's custom light pattern and overwrite it there.
+  - Guide Clr = **Played** now never paints: the step after (Next+1) is lit with the
+    instrument's own Played highlight as well. The highlight lives in a separate layer, so
+    nothing of your layout is touched.
+  - **Restore** has new choices, **Pattern 1 / 2 / 3**. When the plugin is done with painted
+    cells (a colour guide, fingering, LIGHT BARS, TEST LIGHTS), the instrument is asked to
+    reload that stored custom pattern (NRPN 247), which restores it exactly. Whatever is still
+    lit is then painted again.
+  - Restore **Off** painted cells black (colour 7). It is now **Instrument**: the cell is handed
+    back (colour 0), so the instrument's own note lights show again. This is the default for
+    new instances.
+
+### Changed
+- Restore is a menu on the LINN page (five choices). Projects keep their saved choice, so pick
+  **Pattern n** there if your layout is a custom light pattern.
 
 ## [0.5.0] - 2026-11-19
 
@@ -133,6 +157,7 @@ First version.
   project.
 - **Library tool.** Fetches public-domain pieces and copies them to the MPC over SSH.
 
+[0.5.1]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.1
 [0.5.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.0
 [0.4.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.4.0
 [0.3.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.3.0

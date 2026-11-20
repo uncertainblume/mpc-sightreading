@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 501;   // 0.5.1
+constexpr int kVersion = 505;   // 0.5.5
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -284,7 +284,7 @@ public:
         texts_[gen::T_MESSAGE] = "LOAD a piece or GEN an exercise";
         places_.locate(mpc::pluginFolder());
         // the data wheel's first click steps from the default (not from nothing: 0.4.0 jumped)
-        for (int i = 0; i < gen::kNumControls; ++i) { lastInt_[i] = (int)std::lround(get(i)); lastNorm_[i] = getNormalised(i); }
+        for (int i = 0; i < gen::kNumControls; ++i) { lastInt_[i] = (int)std::lround(get(i)); lastNorm_[i] = lastHostNorm_[i] = getNormalised(i); }
         worker_ = std::thread([this] { workerLoop(); });
     }
 
@@ -320,6 +320,7 @@ public:
         if (inParamChange_) return;
         if (index >= gen::kDisplayBase) return;
         if (index >= gen::kTextBase) return;
+        if (gen::kControls[index].kind == gen::kInt || gen::kControls[index].kind == gen::kNote) nudge(index);
         switch (index)
         {
             case gen::P_RESTART: if (plain >= 0.5f) trig_restart_.store(true); break;
@@ -333,15 +334,16 @@ public:
             case gen::P_SND_TEST: if (plain >= 0.5f) trig_sndtest_.store(true); break;
             case gen::P_COL_RESET: if (plain >= 0.5f) trig_colreset_.store(true); break;
             case gen::P_FOLDER: case gen::P_SCROLL: case gen::P_SORT: case gen::P_ROW:
-                if (index != gen::P_ROW) nudge(index);
                 listSrc_.store(1); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
-            case gen::P_SELECT: nudge(index); listSrc_.store(2); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
-            case gen::P_LOOP_FROM: case gen::P_LOOP_TO: case gen::P_LOOP_BARS: nudge(index); if (!loadingState_.load()) loopRule(index); break;
+            case gen::P_SELECT: listSrc_.store(2); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
+            case gen::P_LOOP_FROM: case gen::P_LOOP_TO: case gen::P_LOOP_BARS: if (!loadingState_.load()) loopRule(index); break;
+            case gen::P_LOOP_SET_FROM: if (plain >= 0.5f) trig_setfrom_.store(true); break;
+            case gen::P_LOOP_SET_TO: if (plain >= 0.5f) trig_setto_.store(true); break;
             case gen::P_GOTO_BAR: case gen::P_GOTO_STEP:
-                nudge(index); if (!loadingState_.load()) locateReq_.store(index == gen::P_GOTO_BAR ? 1 : 2); break;
-            case gen::P_BPM: nudge(index); bpmAuthority_.store(true); break;
+                if (!loadingState_.load()) locateReq_.store(index == gen::P_GOTO_BAR ? 1 : 2); break;
+            case gen::P_BPM: bpmAuthority_.store(true); break;
             case gen::P_TEMPO: bpmAuthority_.store(false); break;
-            case gen::P_PIECE: nudge(index); pieceSel_.store(true); wake(); break;
+            case gen::P_PIECE: pieceSel_.store(true); wake(); break;
             case gen::P_PIECE_GO: if (plain >= 0.5f) { trig_piecego_.store(true); wake(); } break;
             case gen::P_PL_ADD: if (plain >= 0.5f) { trig_pladd_.store(true); wake(); } break;
             case gen::P_PL_REMOVE: if (plain >= 0.5f) { trig_plremove_.store(true); wake(); } break;
@@ -352,8 +354,11 @@ public:
                 if (index == gen::P_TRANSPOSE || index == gen::P_SPLIT || (int)get(gen::P_OUT_RANGE) == 2) { trig_rebuild_.store(true); wake(); }
                 break;
             case gen::P_LINN_SIZE: case gen::P_LINN_ROWOFF: case gen::P_LINN_LOW: case gen::P_LINN_LEFT:
+            case gen::P_LINN_OCT: case gen::P_LINN_SEMI: case gen::P_LINN_FIT:
                 trig_rebuild_.store(true); layoutChanged_.store(true); wake(); break;
-            case gen::P_LINN: case gen::P_LINN_KEY: trig_keyread_.store(true); trig_linnscan_.store(true); wake(); break;
+            case gen::P_LINN: trig_keyread_.store(true); trig_linnscan_.store(true); trig_rebuild_.store(true); layoutChanged_.store(true); wake(); break;
+            case gen::P_LINN_KEY: trig_keyread_.store(true); trig_linnscan_.store(true); wake(); break;
+            case gen::P_LINN_FOLLOW: linnAskNow_.store(true); wake(); break;
             default:
                 if (index >= gen::P_PICK0 && index <= gen::P_PICK7 && plain >= 0.5f) { pick_.store(index - gen::P_PICK0); listDirty_.store(true); wake(); }
                 else if (index >= gen::P_QPICK0 && index <= gen::P_QPICK7 && plain >= 0.5f) { qpick_.store(index - gen::P_QPICK0); wake(); }
@@ -405,32 +410,59 @@ public:
 
     // Q-Link and data-wheel moves arrive as the read-back value plus 1/128 (wheel 1/100) of the
     // range; on a long list that skips entries. A small move counts as one step.
+    // The MPC's data wheel moves a number by a hundredth of its range per click (the "coarse"
+    // increment, Akai's ui-reference 3.3), which lands on uneven values: Tempo 100, 102, 104,
+    // 105..., a 1-16 channel needing several clicks per step. A move of that size is taken as one
+    // step from where the value was: one unit, or a round number of milliseconds on the long time
+    // ranges. Whether the MPC adds its hundredth to the value it reads back or to the one it last
+    // sent, the click is recognised. Other moves (a knob dragged, the big editor, a Q-Link turned
+    // fast) are taken as they come.
+    static bool wheelClick(float d) { float a = std::fabs(d); return a > 0.0093f && a < 0.0107f; }
+    int wheelQuantum(int index) const
+    {
+        const gen::ControlDef& c = gen::kControls[index];
+        if (c.kind != gen::kInt || std::strcmp(c.unit, "ms") != 0) return 1;
+        const double raw = (c.max - c.min) / 100.0;
+        static const int nice[] = {1, 2, 5, 10, 20, 50, 100};
+        int best = 1;
+        for (int q : nice) if (std::fabs(q - raw) < std::fabs(best - raw)) best = q;
+        return best;
+    }
     void nudge(int index)
     {
+        const float norm = getNormalised(index);
         if (loadingState_.load())
         {   // a project or preset loading: take the value as it comes
             lastInt_[index] = (int)std::lround(get(index));
-            lastNorm_[index] = getNormalised(index);
+            lastNorm_[index] = lastHostNorm_[index] = norm;
             return;
         }
-        int prev = lastInt_[index];
-        float norm = getNormalised(index);
-        float prevNorm = lastNorm_[index];
-        lastNorm_[index] = norm;
+        const float dOurs = norm - lastNorm_[index], dHost = norm - lastHostNorm_[index];
+        lastHostNorm_[index] = norm;
+        const int prev = lastInt_[index];
         int now = (int)std::lround(get(index));
-        const mpc::Param& p = param(index);
-        float span = p.max - p.min;
-        if (prev >= 0 && span > 20 && std::fabs(norm - prevNorm) > 0 && std::fabs(norm - prevNorm) <= 0.0105f && now != prev)
+        // a click at either end of the range is cut short by the clamp
+        auto clipped = [norm](float d) { return std::fabs(d) > 1e-6f && std::fabs(d) < 0.0107f && ((norm <= 1e-4f && d < 0) || (norm >= 1.0f - 1e-4f && d > 0)); };
+        const bool oursClick = wheelClick(dOurs) || clipped(dOurs), hostClick = wheelClick(dHost) || clipped(dHost);
+        if (oursClick || hostClick)
         {
-            int stepped = prev + (norm > prevNorm ? 1 : -1);
-            inParamChange_ = true;
-            set(index, (float)stepped);
-            inParamChange_ = false;
-            lastNorm_[index] = getNormalised(index);
-            now = stepped;
-            needNotify_[index].store(true);
+            const gen::ControlDef& c = gen::kControls[index];
+            const float dir = oursClick ? dOurs : dHost;
+            const int q = wheelQuantum(index);
+            int stepped = prev + (dir > 0 ? q : -q);
+            if (q > 1) stepped = (int)std::lround(stepped / (double)q) * q;
+            stepped = std::max((int)c.min, std::min((int)c.max, stepped));
+            if (stepped != now)
+            {
+                inParamChange_ = true;
+                set(index, (float)stepped);
+                inParamChange_ = false;
+                needNotify_[index].store(true);
+                now = stepped;
+            }
         }
         lastInt_[index] = now;
+        lastNorm_[index] = getNormalised(index);
     }
 
     bool formatValue(int index, float plain, std::string& out) override
@@ -470,6 +502,7 @@ public:
             const std::string unit = gen::kControls[index].unit;
             char b[32];
             if (index == gen::P_OUT_CH || index == gen::P_LINN_CH) std::snprintf(b, sizeof(b), "Ch %d", v);
+            else if (index == gen::P_LINN_OCT) std::snprintf(b, sizeof(b), v ? "%+d oct" : "0 oct", v);
             else if (index == gen::P_GEN_RHYTHM || index == gen::P_GEN_LEAPS) std::snprintf(b, sizeof(b), "Level %d", v);
             else if (index == gen::P_REMIND_MAX) std::snprintf(b, sizeof(b), v == 1 ? "%d time" : "%d times", v);
             else if (unit == "%") std::snprintf(b, sizeof(b), "%d%%", v);
@@ -531,6 +564,13 @@ public:
                 }
                 readSettings();
                 engine_.restart();
+                {   // back to the bar you were in when a setting rebuilt the piece
+                    const int kb = keepBar_.exchange(-1);
+                    const Score& sc = current_->score;
+                    if (kb > 0)
+                        for (size_t mi = 0; mi < sc.measures.size(); ++mi)
+                            if (sc.measures[mi].number == kb) { engine_.locateStep(engine_.stepAtOrAfter(sc.measures[mi].start)); break; }
+                }
                 lastCursorStep_ = -1; autoNextAt_ = 0;
                 if (old) retired_.store(old, std::memory_order_release);
                 forceFullPush_ = true;
@@ -547,12 +587,16 @@ public:
             engine_.restart(); accompAllOff(); resetParam(gen::P_RESTART); setParamFromEngine(gen::P_PLAY, 0.0f);
         }
         if (listenStopReq_.exchange(false) && listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
-        {
+        {   // LISTEN is play/pause (0.5.5): off while it plays pauses it where it is, on again goes on
             bool wantListen = current_ != nullptr && getBool(gen::P_LISTEN);
             if (wantListen && !listening_) startListen();
-            else if (!wantListen && listening_) stopListen();
+            else if (wantListen && listenPaused_) resumeListen();
+            else if (!wantListen && listening_ && !listenPaused_) pauseListen();
             if (!current_ && getBool(gen::P_LISTEN)) setParamFromEngine(gen::P_LISTEN, 0.0f);
+            if (listening_) followLoopWhileListening();
         }
+        if (trig_setfrom_.exchange(false)) { setLoopEndHere(gen::P_LOOP_FROM); resetParam(gen::P_LOOP_SET_FROM); }
+        if (trig_setto_.exchange(false)) { setLoopEndHere(gen::P_LOOP_TO); resetParam(gen::P_LOOP_SET_TO); }
         if (trig_sndtest_.exchange(false)) { errorSound(0, 1.0f); resetParam(gen::P_SND_TEST); }
         syncTempoParams();
         if (int lr = locateReq_.exchange(0))
@@ -560,15 +604,21 @@ public:
             if (current_)
             {
                 const Score& sc = current_->score;
-                int st;
+                int st; int32_t unit;
                 if (lr == 1)
                 {
                     int mi = (int)std::lround(get(gen::P_GOTO_BAR)) - sc.measures.front().number;
                     mi = std::max(0, std::min((int)sc.measures.size() - 1, mi));
-                    st = engine_.stepAtOrAfter(sc.measures[(size_t)mi].start);
+                    unit = sc.measures[(size_t)mi].start;
+                    st = engine_.stepAtOrAfter(unit);
                 }
-                else st = (int)std::lround(get(gen::P_GOTO_STEP)) - 1;
-                locateTo(st);
+                else
+                {
+                    st = std::max(0, std::min((int)sc.steps.size() - 1, (int)std::lround(get(gen::P_GOTO_STEP)) - 1));
+                    unit = sc.steps.empty() ? 0 : sc.steps[(size_t)st].time;
+                }
+                if (listening_) listenSeek(unit);
+                else locateTo(st);
             }
         }
         followMpc(ctx.transport);
@@ -603,6 +653,7 @@ public:
                 notes[nn++] = {e.sampleOffset, (uint8_t)e.note(), true};
                 lastPlayed_ = e.note();
             }
+            else if (e.isNoteOff()) released_[e.note() & 127] = true;
             else if (e.isAllNotesOff()) accompAllOff();
         }
         // 4. engine (what you play while LISTEN plays is not graded)
@@ -643,7 +694,12 @@ private:
     void locateTo(int step)
     {
         if (!current_) return;
-        if (listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
+        if (listening_)
+        {   // the MPC's playhead moved while LISTEN is on: what you hear moves instead
+            const Score& sc = current_->score;
+            if (!sc.steps.empty()) listenSeek(sc.steps[(size_t)std::max(0, std::min((int)sc.steps.size() - 1, step))].time);
+            return;
+        }
         accompAllOff();
         engine_.locateStep(step);
         lastCursorStep_ = -1;
@@ -673,8 +729,9 @@ private:
     // The header's Bar and Note fields follow the cursor, so the data wheel goes on from there.
     void syncHeaderFields()
     {
-        if (!current_ || listening_) return;
+        if (!current_) return;
         int cs = engine_.currentStep();
+        if (listening_) cs = engine_.stepAtOrAfter((int32_t)listen_.position());
         if (cs == lastCursorStep_) return;
         lastCursorStep_ = cs;
         const Score& sc = current_->score;
@@ -739,6 +796,8 @@ private:
         s.rangeLo = (int)get(gen::P_RANGE_LO);
         s.rangeHi = (int)get(gen::P_RANGE_HI);
         s.outRange = (int)get(gen::P_OUT_RANGE) == 0 ? 0 : 1;
+        s.linnSkip = getBool(gen::P_LINN) && (int)get(gen::P_LINN_FIT) == 1;
+        if (s.linnSkip) linnRange(s.linnLo, s.linnHi);
         s.mask = (int)get(gen::P_MASK);
         s.startMode = (int)get(gen::P_START_MODE);
         static const int ramps[4] = {0, 2, 5, 10};
@@ -810,8 +869,16 @@ private:
                 break;
             }
             case EvType::AccompOn:
-                if ((int)get(gen::P_ACCOMP) != 0 && current_) sendAccomp(ev.a, ev.b);
+            {
+                // Other Hand: the notes of the hand you are not practising; All: also notes left
+                // out for being out of range
+                const int mode = (int)get(gen::P_ACCOMP);
+                if (mode == 0 || !current_ || listening_) break;
+                const PlayNote& pn = current_->score.notes[(size_t)ev.b];
+                const bool otherHand = (settings_.hands == 1 && pn.hand != 0) || (settings_.hands == 2 && pn.hand != 1);
+                if (mode == 2 || otherHand) sendAccomp(ev.a, ev.b);
                 break;
+            }
             default: break;
         }
     }
@@ -905,9 +972,11 @@ private:
     }
     void accompOffsDue()
     {
-        double pos = engine_.position();
+        // the accompaniment's own position: in Wait mode it waits just before the step that wants
+        // you, so a note held up to that step keeps sounding until you play it
+        double pos = engine_.accompPosition();
         for (Sounding& s : sounding_)
-            if (s.pitch >= 0 && (pos >= s.endUnit || (settings_.mode == 0 && pos + 0.5 >= s.endUnit)))
+            if (s.pitch >= 0 && pos >= s.endUnit)
             { uint8_t m[3] = {(uint8_t)(0x80 | s.ch), (uint8_t)s.pitch, 0}; alsa_.sendMidi(m); s.pitch = -1; }
     }
     void accompAllOff()
@@ -947,6 +1016,7 @@ private:
         accompAllOff();
         listenCh_ = outChannel();
         listening_ = listen_.start(&sc, from, to, settings_.loop, hands);
+        listenPaused_ = false; listenLoop_ = settings_.loop;
         if (!listening_) { setParamFromEngine(gen::P_LISTEN, 0.0f); return; }
         engine_.setListenSlot(sc.slotAtTime(from));
         lightsDirty_ = true;
@@ -954,10 +1024,51 @@ private:
         hintCode_.store(4 | (std::min(255, pct) << 8) | ((listenCh_ + 1) << 16));
         wake();
     }
+    void pauseListen()
+    {
+        listen_.silence([this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
+        listenPaused_ = true;
+        lightsDirty_ = true;
+        const Score& sc = current_->score;
+        int bar = sc.measures[(size_t)sc.measureAt((int32_t)listen_.position())].number;
+        hintCode_.store(7 | (std::min(255, bar) << 8) | (std::min(255, bar >> 8) << 16));
+        wake();
+    }
+    void resumeListen() { listenPaused_ = false; lightsDirty_ = true; }
+    void listenSeek(int32_t unit)
+    {
+        listen_.seek(unit, [this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
+        engine_.setListenSlot(current_->score.slotAtTime((int32_t)listen_.position()));
+        lightsDirty_ = true;
+    }
+    // Loop switched on or off, or moved, while LISTEN is on: it plays the new range.
+    void followLoopWhileListening()
+    {
+        const Score& sc = current_->score;
+        int32_t from = 0, to = sc.endUnit;
+        if (settings_.loop) loopUnits(sc, from, to);
+        else from = std::min<int32_t>(listen_.from(), (int32_t)listen_.position());
+        if (settings_.loop == listenLoop_ && (!settings_.loop || (from == listen_.from() && to == listen_.to()))) return;
+        listenLoop_ = settings_.loop;
+        listen_.setRange(from, to, settings_.loop, [this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
+        engine_.setListenSlot(sc.slotAtTime((int32_t)listen_.position()));
+    }
+    // SET (next to Loop From and Loop To): the bar you hear while LISTEN is on, else the bar the
+    // cursor is in.
+    void setLoopEndHere(int param)
+    {
+        if (!current_) return;
+        const Score& sc = current_->score;
+        int mi = listening_ ? sc.measureAt((int32_t)listen_.position()) : engine_.currentMeasure();
+        mi = std::max(0, std::min((int)sc.measures.size() - 1, mi));
+        setTracked(param, (float)sc.measures[(size_t)mi].number);
+        loopRule(param);
+    }
     void stopListen()
     {
         listen_.stop([this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
         listening_ = false;
+        listenPaused_ = false;
         engine_.setListenSlot(-1);
         lightsDirty_ = true;
     }
@@ -969,7 +1080,7 @@ private:
     }
     void listenBlock(int frames)
     {
-        if (!listening_ || !current_) return;
+        if (!listening_ || listenPaused_ || !current_) return;
         bool more = listen_.process(frames, sr_, listenFactor(), [this](int st, int pitch, int vel) { listenSend(st, pitch, vel); });
         if (!more) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); return; }
         engine_.setListenSlot(current_->score.slotAtTime(listen_.position()));
@@ -988,9 +1099,17 @@ private:
         L.cols = (int)get(gen::P_LINN_SIZE) == 1 ? 16 : 25;
         static const int offs[6] = {5, 4, 3, 6, 7, 12};
         L.rowOffset = offs[std::max(0, std::min(5, (int)get(gen::P_LINN_ROWOFF)))];
-        L.lowest = (int)get(gen::P_LINN_LOW);
+        // the instrument's Octave and Transpose settings move every note by the same amount
+        L.lowest = (int)get(gen::P_LINN_LOW) + 12 * (int)std::lround(get(gen::P_LINN_OCT)) + (int)std::lround(get(gen::P_LINN_SEMI));
         L.leftHanded = getBool(gen::P_LINN_LEFT);
         return L;
+    }
+    // The notes the surface can play: bottom-left cell to top-right cell.
+    void linnRange(int& lo, int& hi) const
+    {
+        LinnLayout L = layoutFromParams();
+        lo = std::max(0, L.lowest);
+        hi = std::min(127, L.lowest + (L.rows - 1) * L.rowOffset + (L.cols - 1));
     }
 
     void guideAllOff()
@@ -1105,6 +1224,18 @@ private:
         if (connected && (!wasConnected_ || linnGen != linnGenSeen_)) { lights_.invalidate(); lights_.resetCursor(); litCount_ = 0; lightsDirty_ = true; }
         wasConnected_ = connected; linnGenSeen_ = linnGen;
         LinnLayout L = layoutFromParams();
+        if (lightsRepaint_.exchange(false)) lightsDirty_ = true;
+        if (linnAsk_.exchange(false) && connected)
+        {   // NRPN 299 "send me the value of": 36 Octave, 37 Transpose (left split); then the null NRPN
+            const uint8_t ch = (uint8_t)(0xB0 | (((int)get(gen::P_LINN_CH) - 1) & 15));
+            for (int prm : {36, 37})
+            {
+                const uint8_t q[4][3] = {{ch, 99, 299 >> 7}, {ch, 98, 299 & 127}, {ch, 6, 0}, {ch, 38, (uint8_t)prm}};
+                for (const auto& m : q) alsa_.sendLinn(m);
+            }
+            const uint8_t z[2][3] = {{ch, 99, 127}, {ch, 98, 127}};
+            for (const auto& m : z) alsa_.sendLinn(m);
+        }
         updateBaseColours(L);
         testLightsBlock(L);
         if (!linnOn)
@@ -1170,7 +1301,7 @@ private:
         }
         // guide: the next step's notes (and the one after)
         int guideMode = (int)get(gen::P_LINN_GUIDE);
-        int gcol = (int)get(gen::P_LINN_GCOL);
+        int gcol = (int)get(gen::P_LINN_GCOL), gcol2 = (int)get(gen::P_LINN_GCOL2);
         bool fingering = (int)get(gen::P_LINN_FINGER) == 1 || guideMode == 3;
         linnCh_ = (int)get(gen::P_LINN_CH) - 1;
         int want[16]; int wantCount = 0;
@@ -1190,7 +1321,16 @@ private:
         }
         else if (guideMode > 0 && current_ && engine_.state() != RunState::Done)
         {
+            // the next notes still to press (0.5.5): a step whose notes you have all played, ahead
+            // of the clock in Rhythm or Flow, is passed over, so the guide always shows what to
+            // press next
+            auto allPlayed = [this](int st) {
+                bool open = false;
+                engine_.forEachRequired(st, [&open](const PlayNote&, uint8_t state) { if (state != 1) open = true; });
+                return !open;
+            };
             int s = engine_.nextRequiredStep(std::max(0, engine_.currentStep()));
+            while (s >= 0 && allPlayed(s)) s = engine_.nextRequiredStep(s + 1);
             for (int pass = 0; pass < (guideMode == 2 ? 2 : 1) && s >= 0; ++pass)
             {
                 engine_.forEachRequired(s, [&](const PlayNote& pn, uint8_t state) {
@@ -1200,26 +1340,37 @@ private:
                     wantCol[wantCount] = ni < current_->fing.col.size() ? current_->fing.col[ni] : -1;
                     wantRow[wantCount] = ni < current_->fing.row.size() ? current_->fing.row[ni] : -1;
                     int f = ni < current_->fing.finger.size() ? current_->fing.finger[ni] : 0;
-                    // Played (gcol 0): both steps are Note On highlights, which the instrument keeps
-                    // apart from your own light pattern (0.5.1); with a colour, the step after is white
-                    wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f]
-                                          : (gcol == 0 ? 0 : (pass == 1 ? (uint8_t)kLinnWhite : kLinnColourChoice[gcol - 1]));
+                    // the next step in Guide Clr, the one after in After Clr (0.5.5). Played (0) is the
+                    // instrument's own highlight, kept apart from your light pattern; a colour
+                    // paints the cells
+                    const int c = pass == 0 ? gcol : gcol2;
+                    wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f] : (c == 0 ? 0 : kLinnColourChoice[c - 1]);
                     ++wantCount;
                 });
                 s = engine_.nextRequiredStep(s + 1);
+                while (s >= 0 && allPlayed(s)) s = engine_.nextRequiredStep(s + 1);
             }
         }
+        // A highlighted note you have just released: the instrument cleared the cell under your
+        // finger, so it is lit again if it is still (or again) the note to press.
+        bool relight = false;
+        for (int i = 0; i < litCount_ && !relight; ++i) relight = released_[lit_[i] & 127];
+        std::memset(released_, 0, sizeof(released_));
         // Did the guide change?
         uint32_t sig = 2166136261u;
         for (int i = 0; i < wantCount; ++i) sig = (sig ^ (uint32_t)(want[i] * 31 + wantColour[i])) * 16777619u;
-        sig ^= (uint32_t)guideMode * 7 + (fingering ? 1 : 0);
-        if (sig != guideSig_ || lightsDirty_)
+        sig ^= (uint32_t)guideMode * 7 + (fingering ? 1 : 0) + (uint32_t)gcol2 * 131;
+        if (sig != guideSig_ || lightsDirty_ || relight)
         {
             guideSig_ = sig;
-            bool notesMode = gcol == 0 && !fingering;
-            // Note On highlights (played colour) for notesMode; custom cells otherwise
+            // Note On highlights for the notes without a colour; cell paints for the others
             int newLit[16]; int newCount = 0;
-            if (notesMode) for (int i = 0; i < wantCount; ++i) if (wantColour[i] == 0) newLit[newCount++] = want[i];
+            for (int i = 0; i < wantCount; ++i)
+                if (wantColour[i] == 0)
+                {
+                    bool dup = false; for (int k = 0; k < newCount; ++k) dup |= newLit[k] == want[i];
+                    if (!dup) newLit[newCount++] = want[i];
+                }
             for (int i = 0; i < litCount_; ++i)
             {
                 bool keep = false; for (int k = 0; k < newCount; ++k) keep |= newLit[k] == lit_[i];
@@ -1228,17 +1379,16 @@ private:
             for (int k = 0; k < newCount; ++k)
             {
                 bool was = false; for (int i = 0; i < litCount_; ++i) was |= newLit[k] == lit_[i];
-                if (!was) { uint8_t m[3] = {(uint8_t)(0x90 | (linnCh_ & 15)), (uint8_t)newLit[k], 100}; alsa_.sendLinn(m); }
+                if (!was || relight) { uint8_t m[3] = {(uint8_t)(0x90 | (linnCh_ & 15)), (uint8_t)newLit[k], 100}; alsa_.sendLinn(m); }
             }
             for (int k = 0; k < newCount; ++k) lit_[k] = newLit[k];
             litCount_ = newCount;
             lights_.clearLayer(2);
             for (int i = 0; i < wantCount; ++i)
             {
-                if (notesMode && wantColour[i] == 0) continue;
-                uint8_t c = wantColour[i] ? wantColour[i] : (uint8_t)kLinnWhite;
-                if (fingering && wantCol[i] > 0) lights_.setCell(2, wantCol[i], wantRow[i], c);
-                else lights_.setNote(2, L, want[i], c);
+                if (wantColour[i] == 0) continue;
+                if (fingering && wantCol[i] > 0) lights_.setCell(2, wantCol[i], wantRow[i], wantColour[i]);
+                else lights_.setNote(2, L, want[i], wantColour[i]);
             }
             lightsDirty_ = false;
         }
@@ -1304,13 +1454,14 @@ private:
                 default: status = 1 + settings_.mode; break;
             }
             if (settings_.loop && engine_.state() != RunState::CountIn && engine_.state() != RunState::Paused) status = 9;
-            if (listening_) status = 10;
+            if (listening_) status = listenPaused_ ? 4 : 10;
         }
         setFrame(gen::kD_status, status, gen::kStatusFrames);
         setFrame(gen::kD_handicon, settings_.hands, gen::kHandFrames);
         int curMeasureIdx = engine_.currentMeasure();
         if (sc && listening_ && engine_.listenSlot() >= 0) curMeasureIdx = sc->slots[(size_t)engine_.listenSlot()].measure;
         int curMeasure = sc ? sc->measures[(size_t)curMeasureIdx].number : -1;
+        if (sc && !listening_) curBar_.store(sc->measures[(size_t)engine_.currentMeasure()].number);
         setDigits(gen::kD_d_bar, 3, sc ? std::max(0, curMeasure) : -1);
         setDigits(gen::kD_d_bars, 3, sc ? (int)sc->measures.back().number : -1);
         int hitsTotal = engine_.hits() + engine_.misses() + engine_.wrongs();
@@ -1542,6 +1693,7 @@ private:
         refreshList();
         updateStats();
         auto lastLinnScan = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+        auto lastLinnAsk = lastLinnScan;
         long lastKeyMTime = -1;
         while (true)
         {
@@ -1596,6 +1748,7 @@ private:
             {
                 std::string p; bool gen = false;
                 { std::lock_guard<std::mutex> lk(textMx_); p = currentPath_; gen = currentIsGenerated_; }
+                keepBar_.store(curBar_.load());   // a rebuild (a setting changed) keeps your place
                 if (gen) rebuildGenerated();
                 else if (!p.empty()) loadPath(p, false);
             }
@@ -1608,6 +1761,9 @@ private:
                     setText(gen::T_MESSAGE, "Waiting for the left hand (" + noteName(expected) + "). Hands = Right: RH only");
                 else if (kind == 3)
                     setText(gen::T_MESSAGE, "Waiting for the right hand (" + noteName(expected) + "). Hands = Left: LH only");
+                else if (kind == 7)   // LISTEN paused: the bar
+                    setText(gen::T_MESSAGE, "Paused at bar " + std::to_string(expected | (played << 8)) +
+                                            ": LISTEN goes on, Bar moves, SET marks loop");
                 else if (kind == 4)   // LISTEN started: speed and channel
                     setText(gen::T_MESSAGE, "Listening at " + std::to_string(expected) + "% (Sight Reader MIDI Out, ch " + std::to_string(played) + ")");
                 else if (kind == 5)   // TEST LIGHTS sent: port, channel
@@ -1639,6 +1795,28 @@ private:
                 static const char* found[3] = {"LinnStrument connected by USB", "Sending to MPC MIDI Out A", "Sending to MPC MIDI Out B"};
                 static const char* missing[3] = {"Not found: plug in by USB", "MPC MIDI Out A not found", "MPC MIDI Out B not found"};
                 setText(gen::T_LINN_STATUS, !alsa_.isOpen() ? "No MIDI sequencer here" : (ok ? found[port] : missing[port]));
+            }
+            // the instrument's Octave and Transpose (0.5.5): asked every 3 s while Linn Mode and
+            // Read Transp are on (NRPN 299 for 36 and 37, left split); the answers arrive on Linn In
+            if (getBool(gen::P_LINN) && getBool(gen::P_LINN_FOLLOW) && alsa_.linnConnected() &&
+                (linnAskNow_.exchange(false) || now - lastLinnAsk > std::chrono::seconds(3)))
+            { lastLinnAsk = now; linnAsk_.store(true); }
+            alsa_.pollLinnNrpn([this](int param, int value) {
+                if (param == 36 && value >= 0 && value <= 10) readOct_ = value - 5;
+                else if (param == 37 && value >= 0 && value <= 14) readSemi_ = value - 7;
+            });
+            if (readOct_ > -100 && readSemi_ > -100 && getBool(gen::P_LINN_FOLLOW) &&
+                (readOct_ != (int)std::lround(get(gen::P_LINN_OCT)) || readSemi_ != (int)std::lround(get(gen::P_LINN_SEMI))))
+            {
+                setTracked(gen::P_LINN_OCT, (float)readOct_);
+                setTracked(gen::P_LINN_SEMI, (float)readSemi_);
+                char b[96];
+                std::snprintf(b, sizeof(b), "Read: Octave %+d, Transpose %+d st", readOct_, readSemi_);
+                setText(gen::T_LINN_STATUS, b);
+                // the cells move: fold and plan the fingering again when they depend on it
+                if ((int)get(gen::P_LINN_FIT) == 2 || (int)get(gen::P_LINN_FINGER) == 1 || (int)get(gen::P_LINN_GUIDE) == 3)
+                    trig_rebuild_.store(true);
+                lightsRepaint_.store(true);
             }
             // the project's key, for Key Lights
             int km = (int)get(gen::P_LINN_KEY);
@@ -1957,6 +2135,39 @@ private:
         if (!keep.empty()) smf.notes.swap(keep);
     }
 
+    // Fit Range (Linn Mode, 0.5.5): Fold moves a note the LinnStrument cannot play by octaves
+    // into its range, so the staff shows it where it is played; a note that lands on another of
+    // the same pitch and time in the same track is dropped.
+    void fitToLinn(Smf& smf) const
+    {
+        if (!getBool(gen::P_LINN) || (int)get(gen::P_LINN_FIT) != 2) return;
+        int lo, hi; linnRange(lo, hi);
+        const int tr = (int)get(gen::P_TRANSPOSE);
+        lo -= tr; hi -= tr;
+        if (hi - lo < 11) return;
+        for (SmfNote& n : smf.notes)
+        {
+            int p = n.pitch;
+            while (p < lo) p += 12;
+            while (p > hi) p -= 12;
+            n.pitch = (uint8_t)std::max(0, std::min(127, p));
+        }
+        std::vector<SmfNote> keep;
+        keep.reserve(smf.notes.size());
+        for (const SmfNote& n : smf.notes)
+        {
+            bool dup = false;
+            for (size_t k = keep.size(); k-- > 0 && !dup;)
+            {
+                if (keep[k].on != n.on) { if (keep[k].on < n.on) break; continue; }
+                dup = keep[k].pitch == n.pitch && keep[k].track == n.track;
+                if (dup && n.off > keep[k].off) keep[k].off = n.off;
+            }
+            if (!dup) keep.push_back(n);
+        }
+        smf.notes.swap(keep);
+    }
+
     void loadPath(const std::string& path, bool fresh)
     {
         loading_.store(true);
@@ -1976,6 +2187,7 @@ private:
         Smf smf;
         if (!parseSmf(bytes.data(), bytes.size(), smf, err)) return false;
         filterRange(smf);
+        fitToLinn(smf);
         Loaded* L = new Loaded();
         if (!buildScore(smf, buildOptions(), L->score, err)) { delete L; return false; }
         planFingering(L->score, layoutFromParams(), L->fing);
@@ -2114,7 +2326,7 @@ private:
     int lastPlayed_ = -1;
     int hintRun_ = 0, hintKind_ = 0;
     ListenPlayer listen_;
-    bool listening_ = false;
+    bool listening_ = false, listenPaused_ = false, listenLoop_ = false;
     int listenCh_ = 0;
     std::atomic<bool> listenStopReq_{false};
     std::atomic<int> hintCode_{0};                 // audio -> worker: kind | expected << 8 | played << 16
@@ -2139,6 +2351,11 @@ private:
     // 0.5.0
     std::atomic<int> listSrc_{0}, listGen_{0}, pick_{-1}, qpick_{-1}, locateReq_{0}, rowSel_{-1};
     std::atomic<bool> loadingState_{false};
+    // 0.5.5
+    std::atomic<bool> trig_setfrom_{false}, trig_setto_{false}, linnAsk_{false}, linnAskNow_{false}, lightsRepaint_{false};
+    std::atomic<int> keepBar_{-1}, curBar_{-1};
+    bool released_[128] = {};                       // audio thread: notes you let go of this block
+    int readOct_ = -1000, readSemi_ = -1000;        // worker: what the LinnStrument answered
     std::mutex stateMx_;                           // a state load, against the worker writing list values
     std::atomic<uint32_t> qSelBits_{0};
     std::atomic<int> firstBar_{1}, lastBar_{1};
@@ -2157,6 +2374,7 @@ private:
     std::atomic<bool> needNotify_[gen::kNumControls] = {};
     int lastInt_[gen::kNumControls];
     float lastNorm_[gen::kNumControls];
+    float lastHostNorm_[gen::kNumControls];       // what the host itself last sent (0.5.5)
     // stats snapshot (worker -> audio)
     std::atomic<int> statBest_{-1}, statLast_{-1}, statPlays_{-1}, statMinutes_{-1}, statStreak_{0};
     std::atomic<int> statSections_[16] = {{255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}};

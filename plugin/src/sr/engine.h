@@ -40,6 +40,8 @@ struct EngineSettings
     int remindMax = 3;
     int rangeLo = 21, rangeHi = 108;
     int outRange = 1;        // 0 play everything, 1 skip notes outside the range
+    bool linnSkip = false;   // 0.5.5: notes the LinnStrument cannot play are not asked for
+    int linnLo = 0, linnHi = 127;
     int mask = 0;            // 0 off, 1 hide played, 2 hide the current bar
     int startMode = 0;       // 0 first note, 1 play button, 2 MPC transport
     int ramp = 0;            // tempo ramp per clean loop pass, percent
@@ -88,6 +90,7 @@ public:
         step_ = s;
         pos_ = score_->steps[(size_t)s].time - 1;
         accompStep_ = s;
+        accPos_ = score_->steps[(size_t)s].time;
         lastDoneStep_ = -1;
         holdLeft_ = 0;
         if (state_ == RunState::Done) state_ = RunState::Idle;
@@ -157,6 +160,8 @@ public:
     int lastDoneStep() const { return lastDoneStep_; }
     double secondsSinceDone() const { return clock_ - lastDoneAt_; }
     double position() const { return pos_; }
+    // Where the accompaniment is (Wait mode has its own clock for it), for its note-offs.
+    double accompPosition() const { return settings_.mode == 0 ? accPos_ : pos_; }
     int hits() const { return hits_; }
     int misses() const { return misses_; }
     int wrongs() const { return wrongs_; }
@@ -177,6 +182,7 @@ public:
         if (st.hands == 1 && n.hand != 0) return false;
         if (st.hands == 2 && n.hand != 1) return false;
         if (st.outRange == 1 && (n.pitch < st.rangeLo || n.pitch > st.rangeHi)) return false;
+        if (st.linnSkip && (n.pitch < st.linnLo || n.pitch > st.linnHi)) return false;
         return true;
     }
     // The notes of step s that must be played (for LinnStrument guide lights, note names).
@@ -347,11 +353,11 @@ private:
         else { step_ = 0; pos_ = 0; }
         holdLeft_ = 0; countInElapsed_ = 0; countInNext_ = 0;
         accompStep_ = step_;
+        accPos_ = step_ < (int)(score_ ? score_->steps.size() : 0) ? score_->steps[(size_t)step_].time : 0;
         lastDoneStep_ = -1; lastDoneAt_ = -1e9;
         winStart_[0] = winStart_[1] = -1;
         if (clearStats) { hits_ = misses_ = wrongs_ = streak_ = 0; timedHits_ = 0; timingSumMs_ = 0; activeSeconds_ = 0; remindCountdown_ = 0; remindersLeft_ = 0; }
         skipUnrequired(false, false);
-        accompStep_ = step_;
     }
 
     void beginCountIn(const EngineSettings& st)
@@ -371,8 +377,9 @@ private:
         return (double)kWholeUnits / (m.tsDen ? m.tsDen : 4);
     }
 
-    // Wait mode skips steps nothing is required in (the other hand, notes out of range);
-    // with accompaniment on, those notes are sent out as they are passed.
+    // Wait mode skips steps nothing is required in (the other hand, notes out of range). Their
+    // notes are the accompaniment: since 0.5.5 they are sent in time by the accompaniment clock
+    // (runAccompClock), not all at once as they are skipped.
     void skipUnrequired(bool emit, bool mayFinish = true)
     {
         if (!score_) return;
@@ -389,6 +396,25 @@ private:
         if (mayFinish && (step_ >= n || (settings_.loop && step_ >= loopEndStep_))) finishPass();
     }
 
+    // Wait mode's accompaniment clock: moves at the tempo from the last step you played towards
+    // the next one that wants you, sending the notes you are not asked for as it passes them, and
+    // stops just short of that step (so a held accompaniment note sounds while it waits). After
+    // the last step that wants you it runs on to the end of the piece.
+    void runAccompClock(double dt, double unitsPerSec)
+    {
+        const int n = (int)score_->steps.size();
+        if (accompStep_ >= n) return;
+        const bool tail = state_ == RunState::Done || step_ >= n;
+        const double limit = tail ? (double)score_->endUnit : score_->steps[(size_t)step_].time - 1.0;
+        if (accPos_ < limit) accPos_ = std::min(limit, accPos_ + dt * unitsPerSec);
+        const int stop = tail ? n : step_;
+        while (accompStep_ < stop && score_->steps[(size_t)accompStep_].time <= accPos_) emitAccomp(accompStep_++);
+    }
+    void emitAccompUpTo(double t)
+    {
+        const int n = (int)score_->steps.size();
+        while (accompStep_ < n && score_->steps[(size_t)accompStep_].time <= t) emitAccomp(accompStep_++);
+    }
     void emitAccomp(int s)
     {
         if (!score_) return;
@@ -596,8 +622,13 @@ private:
         { stepState_[step_] = 1; ++step_; }
         if (settings_.mode == 0)
         {
+            // the accompaniment catches up to the step just played (its other-hand notes sound
+            // with it), then runs in time towards the next step that wants you, and waits there
+            const double done = score_->steps[(size_t)(step_ - 1)].time;
+            emitAccompUpTo(done);
+            accPos_ = done;
             if (step_ < n) pos_ = score_->steps[(size_t)step_].time;
-            skipUnrequired(true);
+            skipUnrequired(false);
         }
         else if (step_ >= n || (settings_.loop && step_ >= loopEndStep_))
         {
@@ -643,6 +674,7 @@ private:
             if (countInElapsed_ >= countInBeats_) state_ = RunState::Running;
             return;
         }
+        if (settings_.mode == 0 && (state_ == RunState::Running || state_ == RunState::Done)) runAccompClock(dt, unitsPerSec);
         if (settings_.mode == 0 || state_ != RunState::Running)
         {
             if (state_ == RunState::Holding && holdLeft_ > 0)
@@ -777,6 +809,7 @@ private:
     double holdLeft_ = 0;              // seconds
     int countInBeats_ = 0, countInNext_ = 0; double countInElapsed_ = 0;
     int accompStep_ = 0;
+    double accPos_ = 0;
     bool finishing_ = false;
     int hits_ = 0, misses_ = 0, wrongs_ = 0, streak_ = 0;
     int timedHits_ = 0; double timingSumMs_ = 0;

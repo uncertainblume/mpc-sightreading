@@ -35,6 +35,26 @@ public:
     }
     // send(status, pitch, velocity): 0x90 note on, 0x80 note off (channel added by the caller).
     template <typename Send> void stop(Send send) { allOff(send); playing_ = false; }
+    // 0.5.5 transport. Pause: the caller stops calling process() after silence(); resuming is
+    // calling it again, from where it was.
+    template <typename Send> void silence(Send send) { allOff(send); }
+    // Moves to a score time: inside the loop while looping; otherwise anywhere up to the end
+    // (seeking back before where it started plays from there).
+    template <typename Send> void seek(int32_t unit, Send send)
+    {
+        allOff(send);
+        if (loop_) unit = std::max(from_, std::min(to_ - 1, unit));
+        else { if (unit < from_) from_ = unit; if (unit >= to_) unit = to_ - 1; }
+        if (unit < 0) unit = 0;
+        pos_ = unit; next_ = firstFrom(unit);
+    }
+    // Loop switched on or off, or moved, while it plays.
+    template <typename Send> void setRange(int32_t from, int32_t to, bool loop, Send send)
+    {
+        if (to <= from) return;
+        from_ = from; to_ = to; loop_ = loop;
+        if (pos_ < from_ || pos_ >= to_) seek(from_, send);
+    }
     bool playing() const { return playing_; }
     double position() const { return pos_; }
     int32_t from() const { return from_; }

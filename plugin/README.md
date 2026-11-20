@@ -1,4 +1,4 @@
-# Sight Reader 0.5.1 (Practice Tools)
+# Sight Reader 0.5.5 (Practice Tools)
 
 A sight-reading trainer for the MPC: a grand staff on the plugin page, MIDI files and generated
 exercises, Wait / Flow / Rhythm practice with adjustable slack, progress tracking, and

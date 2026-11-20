@@ -43,7 +43,7 @@ CONTROL = [
     ("out_range",  "Out Range",   "choice", (["Play", "Skip", "Hide"], 1), ""),
     ("mask",       "Mask",        "choice", (["Off", "Played", "Bar"], 0), ""),
     ("names",      "Note Names",  "choice", (["Off", "Next", "Next+Played"], 2), ""),
-    ("accomp",     "Accomp",      "choice", (["Off", "Other Hand", "All"], 0), ""),
+    ("accomp",     "Accomp",      "choice", (["Off", "Other Hand", "All"], 1), ""),   # 0.5.5: on by default
     ("start_mode", "Start",       "choice", (["First Note", "Play Button", "MPC Play"], 0), ""),
     ("split",      "Split",       NOTE,     (36, 84, 60), ""),
     ("transpose",  "Transpose",   "int",    (-12, 12, 0), "st"),
@@ -129,6 +129,14 @@ CONTROL = [
     # the PLAY page's piece list (the title's drop-down) is open; a parameter rather than UI-only
     # state so the plugin can close it once a piece is chosen
     ("qpanel",     "Piece List",  "bool",   (0, 1, 0), ""),
+    # 0.5.5: the loop set from what you hear; LinnStrument range, guide colour, transposition
+    ("loop_set_from","Set From",  "trigger",(0, 1, 0), ""),
+    ("loop_set_to","Set To",      "trigger",(0, 1, 0), ""),
+    ("linn_fit",   "Fit Range",   "choice", (["Off", "Skip", "Fold"], 2), ""),
+    ("linn_gcol2", "After Clr",   "choice", (["Played", "Red", "Yellow", "Green", "Cyan", "Blue", "Magenta", "White", "Orange", "Lime", "Pink"], 0), ""),
+    ("linn_oct",   "Linn Octave", "int",    (-5, 5, 0), ""),
+    ("linn_semi",  "Linn Transp", "int",    (-7, 7, 0), "st"),
+    ("linn_follow","Read Transp", "bool",   (0, 1, 1), ""),
 ]
 
 TEXTS = ["title", "folder_name", "row0", "row1", "row2", "row3", "row4", "row5", "row6", "row7",

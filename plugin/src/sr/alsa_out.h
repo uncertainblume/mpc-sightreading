@@ -13,6 +13,10 @@
 //               subscriber, so a bare direct event could be dropped.
 //   "MIDI Out"  READ | SUBS_READ. The MPC lists it as a track input ("Sight Reader MIDI Out");
 //               the other hand's notes go out here when Accomp is on.
+//   "Linn In"   WRITE | NO_EXPORT, on a second, input-only client (0.5.5). Subscribed from the
+//               LinnStrument's port, so the instrument's answers to setting requests (its
+//               Octave and Transpose, NRPN 299) reach the plugin whatever the MPC routes. Read
+//               on the worker thread, so the audio thread's output handle is never shared.
 //
 // Threading: open/close and find/connect on the worker thread; send on the audio thread
 // (non-blocking system call, no allocation, no locks).
@@ -48,12 +52,12 @@ struct SeqEvent
 };
 static_assert(sizeof(SeqEvent) == 28, "snd_seq_event must be 28 bytes");
 
-enum : uint8_t { kSeqNoteOn = 6, kSeqNoteOff = 7, kSeqController = 10, kSeqQueueDirect = 253, kSeqAddrSubscribers = 254 };
+enum : uint8_t { kSeqNoteOn = 6, kSeqNoteOff = 7, kSeqController = 10, kSeqNonRegParam = 15, kSeqQueueDirect = 253, kSeqAddrSubscribers = 254 };
 enum : unsigned
 {
     kSeqCapRead = 1u << 0, kSeqCapWrite = 1u << 1, kSeqCapSubsRead = 1u << 5, kSeqCapSubsWrite = 1u << 6,
     kSeqCapNoExport = 1u << 7, kSeqTypeMidiGeneric = 1u << 1, kSeqTypeApplication = 1u << 20,
-    kSeqOpenOutput = 1, kSeqOpenDuplex = 3, kSeqNonblock = 1
+    kSeqOpenOutput = 1, kSeqOpenInput = 2, kSeqOpenDuplex = 3, kSeqNonblock = 1
 };
 
 class AlsaOut
@@ -71,12 +75,45 @@ public:
         linnPort_ = api().createPort(s, "Linn Out", kSeqCapRead | kSeqCapNoExport, kSeqTypeMidiGeneric | kSeqTypeApplication);
         midiPort_ = api().createPort(s, "MIDI Out", kSeqCapRead | kSeqCapSubsRead, kSeqTypeMidiGeneric | kSeqTypeApplication);
         seq_ = s;
+        // the input side, for the LinnStrument's answers
+        void* in = nullptr;
+        if (api().connectFrom && api().eventInput && api().open(&in, "default", kSeqOpenInput, kSeqNonblock) >= 0 && in)
+        {
+            api().setName(in, "Sight Reader Linn In");
+            inPort_ = api().createPort(in, "Linn In", kSeqCapWrite | kSeqCapNoExport, kSeqTypeMidiGeneric | kSeqTypeApplication);
+            if (inPort_ >= 0) seqIn_ = in; else api().close(in);
+        }
         return true;
     }
     void close()
     {
+        if (seqIn_) { api().close(seqIn_); seqIn_ = nullptr; }
         if (seq_) { api().close(seq_); seq_ = nullptr; }
-        linnPort_ = midiPort_ = -1; linnClient_ = -1; connected_.store(false);
+        linnPort_ = midiPort_ = inPort_ = -1; linnClient_ = -1; inClient_ = -1; connected_.store(false);
+    }
+    // Worker thread: the NRPN values the LinnStrument has sent since the last call,
+    // f(parameter, value). Controller events are put together per channel (99/98 number,
+    // 6/38 value); a sequencer that already did it hands over NRPN events.
+    template <typename F> void pollLinnNrpn(F f)
+    {
+        if (!seqIn_) return;
+        for (int guard = 0; guard < 512; ++guard)
+        {
+            SeqEvent* ev = nullptr;
+            if (api().eventInput(seqIn_, &ev) < 0 || !ev) break;
+            if (ev->type == kSeqNonRegParam) { f((int)ev->data.control.param, (int)ev->data.control.value); continue; }
+            if (ev->type != kSeqController) continue;
+            Nrpn& n = nrpn_[ev->data.control.channel & 15];
+            const int v = ev->data.control.value & 127;
+            switch (ev->data.control.param)
+            {
+                case 99: n.msb = v; break;
+                case 98: n.lsb = v; break;
+                case 6:  n.dataMsb = v; break;
+                case 38: if (n.msb != 127 || n.lsb != 127) f((n.msb << 7) | n.lsb, (n.dataMsb << 7) | v); break;
+                default: break;
+            }
+        }
     }
     bool isOpen() const { return seq_ != nullptr; }
 
@@ -102,6 +139,13 @@ public:
             linnClient_ = client; linnDestPort_ = port;
             linnGen_.fetch_add(1);
             connected_.store(true);
+            // listen to the same port for the instrument's answers (a DIN port may not be readable)
+            if (seqIn_ && inPort_ >= 0)
+            {
+                if (inClient_ >= 0 && api().disconnectFrom) api().disconnectFrom(seqIn_, inPort_, inClient_, inSrcPort_);
+                inClient_ = -1;
+                if (api().connectFrom(seqIn_, inPort_, client, port) >= 0) { inClient_ = client; inSrcPort_ = port; }
+            }
             return true;
         }
         return false;
@@ -174,6 +218,9 @@ private:
         int (*close)(void*) = nullptr;
         int (*connectTo)(void*, int, int, int) = nullptr;
         int (*disconnectTo)(void*, int, int, int) = nullptr;
+        int (*connectFrom)(void*, int, int, int) = nullptr;
+        int (*disconnectFrom)(void*, int, int, int) = nullptr;
+        int (*eventInput)(void*, SeqEvent**) = nullptr;
         bool load()
         {
             if (state != 0) return state > 0;
@@ -188,6 +235,9 @@ private:
             *(void**)(&close)        = dlsym(h, "snd_seq_close");
             *(void**)(&connectTo)    = dlsym(h, "snd_seq_connect_to");
             *(void**)(&disconnectTo) = dlsym(h, "snd_seq_disconnect_to");
+            *(void**)(&connectFrom)  = dlsym(h, "snd_seq_connect_from");
+            *(void**)(&disconnectFrom) = dlsym(h, "snd_seq_disconnect_from");
+            *(void**)(&eventInput)   = dlsym(h, "snd_seq_event_input");
             if (open && setName && createPort && outputDirect && close) state = 1;
 #endif
             return state > 0;
@@ -196,6 +246,10 @@ private:
     static Api& api() { static Api a; return a; }
 
     void* seq_ = nullptr;
+    void* seqIn_ = nullptr;
+    int inPort_ = -1, inClient_ = -1, inSrcPort_ = -1;
+    struct Nrpn { int msb = 127, lsb = 127, dataMsb = 0; };
+    Nrpn nrpn_[16];
     int linnPort_ = -1, midiPort_ = -1;
     int linnClient_ = -1, linnDestPort_ = -1;
     std::atomic<bool> connected_{false};

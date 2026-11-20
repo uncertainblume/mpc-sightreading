@@ -30,7 +30,7 @@ constexpr ControlDef kControls[] = {
     {"out_range", "Out Range", 3, 0, 2, 1, "", "Play|Skip|Hide"},
     {"mask", "Mask", 3, 0, 2, 0, "", "Off|Played|Bar"},
     {"names", "Note Names", 3, 0, 2, 2, "", "Off|Next|Next+Played"},
-    {"accomp", "Accomp", 3, 0, 2, 0, "", "Off|Other Hand|All"},
+    {"accomp", "Accomp", 3, 0, 2, 1, "", "Off|Other Hand|All"},
     {"start_mode", "Start", 3, 0, 2, 0, "", "First Note|Play Button|MPC Play"},
     {"split", "Split", 5, 36.0, 84.0, 60.0, "", ""},
     {"transpose", "Transpose", 1, -12.0, 12.0, 0.0, "st", ""},
@@ -129,8 +129,15 @@ constexpr ControlDef kControls[] = {
     {"linn_test", "Test Lights", 4, 0.0, 1.0, 0.0, "", ""},
     {"linn_restore", "Restore", 3, 0, 4, 0, "", "Instrument|Note Colors|Pattern 1|Pattern 2|Pattern 3"},
     {"qpanel", "Piece List", 2, 0.0, 1.0, 0.0, "", ""},
+    {"loop_set_from", "Set From", 4, 0.0, 1.0, 0.0, "", ""},
+    {"loop_set_to", "Set To", 4, 0.0, 1.0, 0.0, "", ""},
+    {"linn_fit", "Fit Range", 3, 0, 2, 2, "", "Off|Skip|Fold"},
+    {"linn_gcol2", "After Clr", 3, 0, 10, 0, "", "Played|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink"},
+    {"linn_oct", "Linn Octave", 1, -5.0, 5.0, 0.0, "", ""},
+    {"linn_semi", "Linn Transp", 1, -7.0, 7.0, 0.0, "st", ""},
+    {"linn_follow", "Read Transp", 2, 0.0, 1.0, 1.0, "", ""},
 };
-constexpr int kNumControls = 125;
+constexpr int kNumControls = 132;
 enum ControlId {
     P_BLIP_VOL = 0,
     P_MODE = 1,
@@ -257,8 +264,15 @@ enum ControlId {
     P_LINN_TEST = 122,
     P_LINN_RESTORE = 123,
     P_QPANEL = 124,
+    P_LOOP_SET_FROM = 125,
+    P_LOOP_SET_TO = 126,
+    P_LINN_FIT = 127,
+    P_LINN_GCOL2 = 128,
+    P_LINN_OCT = 129,
+    P_LINN_SEMI = 130,
+    P_LINN_FOLLOW = 131,
 };
-constexpr int kTextBase = 125, kNumTexts = 31;
+constexpr int kTextBase = 132, kNumTexts = 31;
 enum TextId {
     T_TITLE = 0,
     T_FOLDER_NAME = 1,
@@ -292,70 +306,70 @@ enum TextId {
     T_Q7 = 29,
     T_QINFO = 30,
 };
-constexpr int kD_cell = 156, kN_cell = 660;
-constexpr int kD_mark = 816, kN_mark = 660;  // 153 frames
+constexpr int kD_cell = 163, kN_cell = 660;
+constexpr int kD_mark = 823, kN_mark = 660;  // 153 frames
 constexpr int kF_mark = 153;
-constexpr int kD_overlay = 1476, kN_overlay = 20;  // 6 frames
+constexpr int kD_overlay = 1483, kN_overlay = 20;  // 6 frames
 constexpr int kF_overlay = 6;
-constexpr int kD_mask = 1496, kN_mask = 2;  // 3 frames
+constexpr int kD_mask = 1503, kN_mask = 2;  // 3 frames
 constexpr int kF_mask = 3;
-constexpr int kD_barline = 1498, kN_barline = 21;  // 6 frames
+constexpr int kD_barline = 1505, kN_barline = 21;  // 6 frames
 constexpr int kF_barline = 6;
-constexpr int kD_keysig = 1519, kN_keysig = 1;  // 15 frames
+constexpr int kD_keysig = 1526, kN_keysig = 1;  // 15 frames
 constexpr int kF_keysig = 15;
-constexpr int kD_timesig = 1520, kN_timesig = 1;  // 15 frames
+constexpr int kD_timesig = 1527, kN_timesig = 1;  // 15 frames
 constexpr int kF_timesig = 15;
-constexpr int kD_flash = 1521, kN_flash = 1;  // 3 frames
+constexpr int kD_flash = 1528, kN_flash = 1;  // 3 frames
 constexpr int kF_flash = 3;
-constexpr int kD_status = 1522, kN_status = 1;  // 11 frames
+constexpr int kD_status = 1529, kN_status = 1;  // 11 frames
 constexpr int kF_status = 11;
-constexpr int kD_handicon = 1523, kN_handicon = 1;  // 3 frames
+constexpr int kD_handicon = 1530, kN_handicon = 1;  // 3 frames
 constexpr int kF_handicon = 3;
-constexpr int kD_d_bar = 1524, kN_d_bar = 3;  // 11 frames
+constexpr int kD_d_bar = 1531, kN_d_bar = 3;  // 11 frames
 constexpr int kF_d_bar = 11;
-constexpr int kD_d_bars = 1527, kN_d_bars = 3;  // 11 frames
+constexpr int kD_d_bars = 1534, kN_d_bars = 3;  // 11 frames
 constexpr int kF_d_bars = 11;
-constexpr int kD_d_acc = 1530, kN_d_acc = 3;  // 11 frames
+constexpr int kD_d_acc = 1537, kN_d_acc = 3;  // 11 frames
 constexpr int kF_d_acc = 11;
-constexpr int kD_d_bpm = 1533, kN_d_bpm = 3;  // 11 frames
+constexpr int kD_d_bpm = 1540, kN_d_bpm = 3;  // 11 frames
 constexpr int kF_d_bpm = 11;
-constexpr int kD_d_err = 1536, kN_d_err = 3;  // 11 frames
+constexpr int kD_d_err = 1543, kN_d_err = 3;  // 11 frames
 constexpr int kF_d_err = 11;
-constexpr int kD_nextname = 1539, kN_nextname = 1;  // 177 frames
+constexpr int kD_nextname = 1546, kN_nextname = 1;  // 177 frames
 constexpr int kF_nextname = 177;
-constexpr int kD_playedname = 1540, kN_playedname = 1;  // 177 frames
+constexpr int kD_playedname = 1547, kN_playedname = 1;  // 177 frames
 constexpr int kF_playedname = 177;
-constexpr int kD_finger = 1541, kN_finger = 2;  // 6 frames
+constexpr int kD_finger = 1548, kN_finger = 2;  // 6 frames
 constexpr int kF_finger = 6;
-constexpr int kD_mnum = 1543, kN_mnum = 6;  // 11 frames
+constexpr int kD_mnum = 1550, kN_mnum = 6;  // 11 frames
 constexpr int kF_mnum = 11;
-constexpr int kD_progress = 1549, kN_progress = 1;
-constexpr int kD_linnstate = 1550, kN_linnstate = 1;  // 4 frames
+constexpr int kD_progress = 1556, kN_progress = 1;
+constexpr int kD_linnstate = 1557, kN_linnstate = 1;  // 4 frames
 constexpr int kF_linnstate = 4;
-constexpr int kD_statbar = 1551, kN_statbar = 16;  // 21 frames
+constexpr int kD_statbar = 1558, kN_statbar = 16;  // 21 frames
 constexpr int kF_statbar = 21;
-constexpr int kD_d_best = 1567, kN_d_best = 3;  // 11 frames
+constexpr int kD_d_best = 1574, kN_d_best = 3;  // 11 frames
 constexpr int kF_d_best = 11;
-constexpr int kD_d_last = 1570, kN_d_last = 3;  // 11 frames
+constexpr int kD_d_last = 1577, kN_d_last = 3;  // 11 frames
 constexpr int kF_d_last = 11;
-constexpr int kD_d_passes = 1573, kN_d_passes = 3;  // 11 frames
+constexpr int kD_d_passes = 1580, kN_d_passes = 3;  // 11 frames
 constexpr int kF_d_passes = 11;
-constexpr int kD_d_minutes = 1576, kN_d_minutes = 4;  // 11 frames
+constexpr int kD_d_minutes = 1583, kN_d_minutes = 4;  // 11 frames
 constexpr int kF_d_minutes = 11;
-constexpr int kD_d_streak = 1580, kN_d_streak = 3;  // 11 frames
+constexpr int kD_d_streak = 1587, kN_d_streak = 3;  // 11 frames
 constexpr int kF_d_streak = 11;
-constexpr int kD_nextname_lh = 1583, kN_nextname_lh = 1;  // 177 frames
+constexpr int kD_nextname_lh = 1590, kN_nextname_lh = 1;  // 177 frames
 constexpr int kF_nextname_lh = 177;
-constexpr int kD_swatch = 1584, kN_swatch = 12;  // 18 frames
+constexpr int kD_swatch = 1591, kN_swatch = 12;  // 18 frames
 constexpr int kF_swatch = 18;
-constexpr int kD_ro = 1596, kN_ro = 35;
-constexpr int kD_rowsel = 1631, kN_rowsel = 8;  // 2 frames
+constexpr int kD_ro = 1603, kN_ro = 37;
+constexpr int kD_rowsel = 1640, kN_rowsel = 8;  // 2 frames
 constexpr int kF_rowsel = 2;
-constexpr int kD_qsel = 1639, kN_qsel = 8;  // 3 frames
+constexpr int kD_qsel = 1648, kN_qsel = 8;  // 3 frames
 constexpr int kF_qsel = 3;
 // readouts: display parameter kD_ro + i mirrors control kRoControl[i] (value - min), kRoFrames[i] frames
-constexpr int kRoControl[35] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS, P_AUTO_NEXT, P_LINN_PORT, P_LINN_RESTORE};
-constexpr int kRoFrames[35] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2, 2, 3, 5};
-constexpr int kDisplayBase = 156;
-constexpr int kNumParams = 1647;
+constexpr int kRoControl[37] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS, P_AUTO_NEXT, P_LINN_PORT, P_LINN_RESTORE, P_LINN_FIT, P_LINN_FOLLOW};
+constexpr int kRoFrames[37] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2, 2, 3, 5, 3, 2};
+constexpr int kDisplayBase = 163;
+constexpr int kNumParams = 1656;
 }} // namespace sr::gen

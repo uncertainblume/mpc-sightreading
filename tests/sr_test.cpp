@@ -407,6 +407,57 @@ static int selftest()
         int n = l2.flush(3, rec);
         CHECK(n <= 3 && sent.size() == (size_t)n);
     }
+    // --- 0.5.5: Wait mode plays the other hand in time and waits for yours ---------------------
+    {
+        // RH: C5 on beats 1 and 3 (half notes); LH: C3 D3 E3 F3 on every beat. 120 bpm.
+        std::vector<SmfWriteTrack> t(2); t[0].name = "Right"; t[1].name = "Left";
+        t[0].notes.push_back({0, 192, 72, 80}); t[0].notes.push_back({192, 384, 74, 80});
+        const int lh[4] = {48, 50, 52, 53};
+        for (int i = 0; i < 4; ++i) t[1].notes.push_back({i * 96, (i + 1) * 96, (uint8_t)lh[i], 70});
+        std::vector<uint8_t> b = writeSmf(96, 120, 4, 4, 0, false, "Accomp", t);
+        Smf sm; Score sa; std::string e5;
+        CHECK(parseSmf(b.data(), b.size(), sm, e5) && buildScore(sm, BuildOptions(), sa, e5));
+        std::vector<uint8_t> ss(sa.steps.size(), 0), ns(sa.notes.size(), 0), sw(sa.steps.size(), 0);
+        Engine eng; eng.setScore(&sa, ss.data(), ns.data(), sw.data());
+        EngineSettings st; st.mode = 0; st.hands = 1; st.tempoFactor = 1.0;
+        eng.process(st, nullptr, 0, 128, 44100.0);
+        eng.restart();
+        std::vector<int> heard;
+        auto run = [&](double secs, const Engine::NoteIn* in = nullptr, int nIn = 0) {
+            for (int b2 = 0; b2 < (int)(secs * 44100 / 128); ++b2)
+            {
+                eng.process(st, b2 == 0 ? in : nullptr, b2 == 0 ? nIn : 0, 128, 44100.0);
+                for (int k = 0; k < eng.numEvents(); ++k) if (eng.event(k).type == EvType::AccompOn) heard.push_back(eng.event(k).a);
+            }
+        };
+        run(1.0);
+        CHECK(heard.empty());                                   // nothing before you start
+        Engine::NoteIn c5 = {0, 72, true};
+        run(0.05, &c5, 1);
+        CHECK(heard.size() == 1 && heard[0] == 48);             // C3 sounds with your C5
+        run(0.6);                                               // a beat (0.5 s) later: D3
+        CHECK(heard.size() == 2 && heard[1] == 50);
+        run(2.0);                                               // E3 is on beat 3, with your next note: it waits
+        CHECK(heard.size() == 2);
+        CHECK(eng.accompPosition() < sa.steps[2].time);
+        Engine::NoteIn d5 = {0, 74, true};
+        run(0.05, &d5, 1);
+        CHECK(heard.size() == 3 && heard[2] == 52);             // E3 with your D5
+        run(0.6);
+        CHECK(heard.size() == 4 && heard[3] == 53);             // and F3 a beat later, after your last note
+        std::printf("accompaniment heard:");
+        for (int h : heard) std::printf(" %d", h);
+        std::printf("\n");
+        // LISTEN's seek and loop change
+        ListenPlayer lp; int ons = 0;
+        auto send = [&ons](int status, int, int) { if (status == 0x90) ++ons; };
+        CHECK(lp.start(&sa, 0, sa.endUnit, false, 3));
+        lp.process(128, 44100.0, 1.0, send);
+        lp.seek(sa.steps[2].time, send);
+        CHECK((int32_t)lp.position() == sa.steps[2].time);
+        lp.setRange(0, sa.steps[1].time, true, send);            // a loop that ends before where it is
+        CHECK(lp.position() < sa.steps[1].time);
+    }
     // --- generator: every combination parses and lays out ---------------------------------------
     for (int sc_i = 0; sc_i < kNumGenScales; ++sc_i)
         for (int meter = 0; meter < 4; ++meter)

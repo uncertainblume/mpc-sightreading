@@ -123,7 +123,9 @@ CONTROL = [
     ("pl_remove",  "Remove",      "trigger",(0, 1, 0), ""),
     ("linn_port",  "Linn Port",   "choice", (["USB", "MPC Out A", "MPC Out B"], 0), ""),
     ("linn_test",  "Test Lights", "trigger",(0, 1, 0), ""),
-    ("linn_restore","Restore",    "choice", (["Off", "Note Colors"], 1), ""),
+    # 0.5.1: "Off" (black) became Instrument (the cell is handed back); Pattern n reloads the
+    # instrument's custom light pattern n. Choices only ever appended, so saved values keep meaning.
+    ("linn_restore","Restore",    "choice", (["Instrument", "Note Colors", "Pattern 1", "Pattern 2", "Pattern 3"], 0), ""),
     # the PLAY page's piece list (the title's drop-down) is open; a parameter rather than UI-only
     # state so the plugin can close it once a piece is chosen
     ("qpanel",     "Piece List",  "bool",   (0, 1, 0), ""),

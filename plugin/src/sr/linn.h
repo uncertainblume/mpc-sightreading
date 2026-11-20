@@ -27,7 +27,9 @@
 namespace sr {
 
 // LinnStrument colour numbers (midi.md "Color Values")
-enum LinnColour : uint8_t { kLinnRed = 1, kLinnYellow = 2, kLinnGreen = 3, kLinnCyan = 4, kLinnBlue = 5, kLinnMagenta = 6,
+// 0 hands the cell back: it is cleared from the layer MIDI paints into (LED_LAYER_CUSTOM1 in the
+// firmware), so the instrument's own note lights show through. 7 is opaque black, not "off".
+enum LinnColour : uint8_t { kLinnClear = 0, kLinnRed = 1, kLinnYellow = 2, kLinnGreen = 3, kLinnCyan = 4, kLinnBlue = 5, kLinnMagenta = 6,
                             kLinnOff = 7, kLinnWhite = 8, kLinnOrange = 9, kLinnLime = 10, kLinnPink = 11 };
 // The plugin's colour choice lists (without "Played") in this order:
 constexpr uint8_t kLinnColourChoice[10] = {kLinnRed, kLinnYellow, kLinnGreen, kLinnCyan, kLinnBlue, kLinnMagenta, kLinnWhite, kLinnOrange, kLinnLime, kLinnPink};
@@ -219,6 +221,31 @@ public:
         if (col < 0 || col >= kCols || row < 0 || row >= kRows) return;
         if (base_[col][row] != colour) { base_[col][row] = colour; dirty_ = true; }
     }
+    // What a touched cell gets once nothing lights it and it has no base colour: kLinnClear (the
+    // instrument's own lights) by default.
+    void setIdle(uint8_t colour) { if (idle_ != colour) { idle_ = colour; dirty_ = true; } }
+    // Pattern mode (0.5.1): the instrument's custom light pattern shares the layer MIDI paints go
+    // into, so the exact way back is to have the instrument reload its stored pattern (NRPN 247).
+    // In this mode a cell to be given back is not painted; reloadWanted() asks the caller to send
+    // the reload, and afterReload() marks every cell as showing the pattern again, so that the
+    // next flush repaints only what is still lit.
+    void setReloadMode(bool on) { if (reloadMode_ != on) { reloadMode_ = on; dirty_ = true; } }
+    bool reloadWanted() const { return reloadWanted_; }
+    void afterReload()
+    {
+        for (int c = 0; c < kCols; ++c)
+            for (int r = 0; r < kRows; ++r)
+            {
+                bool lit = false;
+                for (int l = 0; l < kLayers && !lit; ++l) lit = layer_[l][c][r] != 0;
+                touched_[c][r] = lit;
+                sent_[c][r] = lit ? 0xFF : 0;
+            }
+        reloadWanted_ = false;
+        resetCursor();
+        dirty_ = true;
+    }
+
     // Forget what the instrument shows (it was unplugged or switched off): repaint what we touched.
     void invalidate()
     {
@@ -239,7 +266,12 @@ public:
                 uint8_t w = 0;
                 for (int l = kLayers - 1; l >= 0 && !w; --l) w = layer_[l][c][r];
                 if (!w && !touched_[c][r]) continue;
-                uint8_t target = w ? w : (base_[c][r] ? base_[c][r] : (uint8_t)kLinnOff);
+                if (!w && reloadMode_)
+                {   // given back by reloading the pattern, not by a paint
+                    if (sent_[c][r] != 0) { reloadWanted_ = true; pending = true; }
+                    continue;
+                }
+                uint8_t target = w ? w : (base_[c][r] ? base_[c][r] : idle_);
                 if (sent_[c][r] == target) continue;
                 if (msgs + 3 > maxMsgs) { pending = true; continue; }
                 touched_[c][r] = true;
@@ -260,6 +292,8 @@ private:
     bool touched_[kCols][kRows];
     uint8_t sent_[kCols][kRows];            // what we last sent; 0 nothing yet, 0xFF unknown
     bool dirty_ = false;
+    uint8_t idle_ = kLinnClear;
+    bool reloadMode_ = false, reloadWanted_ = false;
     int cursorCol_ = -1, cursorRow_ = -1;
 };
 

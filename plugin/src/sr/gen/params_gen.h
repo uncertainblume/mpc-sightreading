@@ -127,7 +127,7 @@ constexpr ControlDef kControls[] = {
     {"pl_remove", "Remove", 4, 0.0, 1.0, 0.0, "", ""},
     {"linn_port", "Linn Port", 3, 0, 2, 0, "", "USB|MPC Out A|MPC Out B"},
     {"linn_test", "Test Lights", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn_restore", "Restore", 3, 0, 1, 1, "", "Off|Note Colors"},
+    {"linn_restore", "Restore", 3, 0, 4, 0, "", "Instrument|Note Colors|Pattern 1|Pattern 2|Pattern 3"},
     {"qpanel", "Piece List", 2, 0.0, 1.0, 0.0, "", ""},
 };
 constexpr int kNumControls = 125;
@@ -355,7 +355,7 @@ constexpr int kD_qsel = 1639, kN_qsel = 8;  // 3 frames
 constexpr int kF_qsel = 3;
 // readouts: display parameter kD_ro + i mirrors control kRoControl[i] (value - min), kRoFrames[i] frames
 constexpr int kRoControl[35] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS, P_AUTO_NEXT, P_LINN_PORT, P_LINN_RESTORE};
-constexpr int kRoFrames[35] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2, 2, 3, 2};
+constexpr int kRoFrames[35] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2, 2, 3, 5};
 constexpr int kDisplayBase = 156;
 constexpr int kNumParams = 1647;
 }} // namespace sr::gen

@@ -132,8 +132,11 @@ READOUTS = {
                   "MPC Out A: MIDI Out A to the LinnStrument's MIDI In (MIDI I/O: MIDI jacks).",
                   "MPC Out B: MIDI Out B to the LinnStrument's MIDI In (MIDI I/O: MIDI jacks)."],
     "linn_test": "A green diagonal and C4 for 2 s: is anything getting through?",
-    "linn_restore": ["Off: cells the plugin lit go dark when it is done with them.",
-                     "Note Colors: they go back to your note colours (COLOR page)."],
+    "linn_restore": ["Instrument: cells go back to the LinnStrument's own note lights.",
+                     "Note Colors: they get the COLOR page's colours (an approximation).",
+                     "Pattern 1: the instrument reloads its custom light pattern 1, exactly.",
+                     "Pattern 2: the instrument reloads its custom light pattern 2, exactly.",
+                     "Pattern 3: the instrument reloads its custom light pattern 3, exactly."],
     "linn_left": ["Off: right-handed layout.",
                   "On: columns mirrored for a left-handed setup."],
     # GEN

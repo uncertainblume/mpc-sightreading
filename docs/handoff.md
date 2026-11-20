@@ -43,6 +43,24 @@ This is where to pick up. What is settled (end of 2026-11-19):
 - The MIDI-jacks route (Linn Port = MPC Out A/B) is built but **untested and no longer
   needed**. Keep it.
 
+**0.5.1 (2026-11-20) fixed one of the odd behaviours.** The user reported that playing left
+cells recoloured (white, A and Ab orange), so their layout drifted over a long piece. Cause,
+from the firmware source (rogerlinndesign/linnstrument-firmware):
+- CC 20/21/22 paints go into LED_LAYER_CUSTOM1, which also holds the active custom light pattern
+  (copied from `Device.customLeds`).
+- CC 22 colour 0 clears a cell from that layer; colour 7 paints it black.
+- Note On highlights go into LED_LAYER_PLAYED.
+- NRPN 247 (active note lights preset, 9-11 = custom patterns 1-3) reloads the stored pattern
+  (`loadCustomLedLayer`).
+
+The fixes:
+- The Played guide no longer paints (Next+1 uses highlights too).
+- Restore offers Pattern 1-3 (reload by NRPN 247, then repaint what is still lit).
+- Off became Instrument (colour 0).
+
+Not yet tried on the instrument: ask whether the layout now stays put, and whether Restore =
+Pattern n restores it after TEST LIGHTS.
+
 **What is not settled: the guide behaves oddly.** With lights working, the user tried the guide
 and reports that **Next** and **Next+1** (two ahead) behave weirdly: "light changes happen but we
 have to debug a bunch of weird behaviors". They chose to leave it for the next session. The
@@ -237,7 +255,7 @@ data-wheel steps on the new fields, the DIN route).
 Save your project first; plugins run without crash protection. Update with:
 
 ```bash
-python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.0-mpc.zip
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.1-mpc.zip
 ```
 
 It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps

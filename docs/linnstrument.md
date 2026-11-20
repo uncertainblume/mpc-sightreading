@@ -78,19 +78,33 @@ one to play: watch the shape of a passage on the surface while you hear it.
 
 ## What happens to your own lights
 
-Cell paints (CC 20/21/22) go into the firmware's custom layer, the same layer as the
-LinnStrument's own custom light patterns. So the plugin paints only the cells it needs, and a
-cell it has finished with goes back to:
+There are two ways to light the instrument, and they differ in what they leave behind
+(firmware 2.3, `ls_midiLights.ino`, `ls_leds.ino`):
 
-- **Restore = Note Colors** (default): your note colours from the COLOR page, in the
-  LinnStrument's nearest colour (C cyan, D blue, E pink, F magenta, G white, A yellow, B orange;
-  C# cyan, D# blue, F# pink, G# white, A# yellow).
-- **Restore = Off**: colour 7, which turns the painted cell off and lets your normal note lights
-  show through again.
+- **Note On highlights** (Guide Clr = **Played**) light a note's cells in your Played colour, in
+  a layer of their own. They never touch your layout, and the Note Off clears them. Since 0.5.1
+  the Played guide uses only these, for Next+1 as well (both steps in the Played colour).
+- **Cell paints** (CC 20/21/22: a guide colour, fingering, LIGHT BARS, Key Lights, TEST LIGHTS)
+  go into the firmware's custom layer. That is the same layer that holds a **custom light
+  pattern**, so a paint overwrites the pattern's cell until the pattern is loaded again.
+
+When the plugin is done with a painted cell, **Restore** decides what happens to it:
+
+- **Instrument** (default): the cell is handed back (colour 0) and the instrument's own note
+  lights show. This is right for the standard note lights. With a custom pattern the cell goes
+  dark until the pattern is reloaded.
+- **Pattern 1 / 2 / 3**: for a custom light pattern. The plugin asks the instrument to reload
+  that stored pattern (NRPN 247 "active note lights preset" = 9, 10 or 11), which restores it
+  exactly, then paints again whatever is still lit. Choose the pattern your LinnStrument shows:
+  choosing another one switches the instrument to it.
+- **Note Colors**: the cell gets the COLOR page's colour for its note, in the LinnStrument's
+  nearest colour. It is an approximation, and with a custom pattern it drifts from your layout.
 
 Cells the plugin never painted are never written. Messages are paced to the route: up to about
 3,000 a second over USB (the instrument's USB side reaches its processor through a 115,200-baud
-serial link) and 900 a second through a DIN port (31,250 baud).
+serial link) and 900 a second through a DIN port (31,250 baud). If your layout ever gets mixed
+up, choosing your custom pattern again on the instrument (or switching it off and on) brings it
+back.
 
 ## Fingering
 

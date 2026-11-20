@@ -106,7 +106,7 @@ sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a s
 You need MPC OS 3.10.1 or later with **Preferences → Enhancements (Beta) → Enable Enhancements**
 and **External Plugin Support** switched on.
 
-1. Download `sight-reader-0.5.0-mpc.zip` from the
+1. Download `sight-reader-0.5.1-mpc.zip` from the
    [releases](https://github.com/uncertainblume/mpc-sightreading/releases) (the same file is in
    [dist/](dist/)) and unzip it, or build it yourself (below).
 2. Copy the folder `Practice Tools - VST - Sight Reader` into `VST2 Plugins` at the top of the
@@ -115,7 +115,7 @@ and **External Plugin Support** switched on.
    first):
 
    ```bash
-   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.0-mpc.zip
+   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.1-mpc.zip
    ```
 3. Restart the MPC app. Sight Reader is under **External Plugins**. Projects that already use it
    keep their settings.

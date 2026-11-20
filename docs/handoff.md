@@ -5,6 +5,20 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 
 ## Start here (next session)
 
+**Next version (planned, not started; wait for the user's go):** **Load by URL** in the MIDI
+loader. The user tried 0.6.0: the loader talks to their MPC properly, and they would like to paste
+a link and have the piece added. Points to settle when building it:
+- Download on the computer (urllib, http/https only, a timeout, at most 8 MB), never on the MPC.
+- Check for MThd. Take the file name from Content-Disposition or the URL. Ask which collection.
+  Put the URL in index.tsv's source column.
+- Take direct .mid/.midi links, zips of .mid files (Mutopia's -mids.zip), and perhaps a page whose
+  .mid links can be listed to pick from.
+- Sites that block scripts (kunstderfuge, MuseScore) will refuse: say so plainly, and suggest
+  downloading in the browser and dropping the file on the page.
+
+The colour question (other colours for Next/After) is parked by the user; the answer so far is
+under "Which colours" in linnstrument.md.
+
 **0.6.0 (2026-11-20)** is the easier way to load MIDI files that the user asked for. They wanted
 nothing extra running on the MPC, so the loader is on the computer:
 - `loader/mpc-sightreading-midi-loader.py`: one standard-library Python file, plus a `.command`

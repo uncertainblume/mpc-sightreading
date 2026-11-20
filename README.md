@@ -18,6 +18,10 @@ Carlos, the pioneer without whom none of this would be possible.*
 **[Download the latest release](https://github.com/uncertainblume/mpc-sightreading/releases/latest)**
 (a zip to copy to the MPC; what changed in each version is in [CHANGELOG.md](CHANGELOG.md)).
 
+
+
+If anyone finds any of this this super useful and can afford it, send me a tip on PayPal, I'm hilariously unemployed: <img width="500" height="500" alt="paypalqrcode" src="https://github.com/user-attachments/assets/f481d192-200a-4d61-a5a7-09f00cb26175" />
+
 **Status: version 0.5.0.** Earlier versions were tried on an MPC Live III: the pages, the
 notation, the cursor and the practice modes work, and practising a drill on the device "worked
 well". 0.5.0 answers the notes from that test:

@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 505;   // 0.5.5
+constexpr int kVersion = 506;   // 0.5.6
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -1118,6 +1118,7 @@ private:
         {
             uint8_t m[3] = {(uint8_t)(0x80 | (linnCh_ & 15)), (uint8_t)lit_[i], 0};
             alsa_.sendLinn(m);
+            rememberOff(lit_[i]);
         }
         litCount_ = 0;
         lights_.clearLayer(2);
@@ -1128,14 +1129,17 @@ private:
     // (about 1,000). Up to 3,000 messages a second by USB, 900 by DIN.
     void flushLights(int frames)
     {
-        // a budget of messages that refills with time, whatever the block size
+        // a budget of messages that refills with time, whatever the block size. 0.5.6: gentler
+        // (the instrument reads one byte per pass of its main loop into a small buffer) and in
+        // small bursts, and nothing for a moment after a request that makes it redraw everything
         const bool usb = (int)get(gen::P_LINN_PORT) == 0;
-        const double rate = usb ? 3000.0 : 900.0, cap = usb ? 12.0 : 6.0;
+        const double rate = usb ? 1500.0 : 900.0, cap = 6.0;
         linnBudget_ = std::min(cap, linnBudget_ + frames * rate / std::max(1.0, sr_));
-        if (!alsa_.linnConnected() || linnBudget_ < 3.0) return;
+        if (!alsa_.linnConnected() || linnBudget_ < 3.0 || sampleClock_ < linnQuietUntil_) return;
         // Restore = Pattern n: cells to give back are restored by having the instrument reload its
         // stored custom pattern (NRPN 247 "active note lights preset" = 8 + n, ls_midi.ino), then
-        // what is still lit is painted again. At most every 60 ms.
+        // what is still lit is painted again, after a pause while it redraws. At most every
+        // 150 ms: each reload redraws the whole surface.
         const int restore = (int)get(gen::P_LINN_RESTORE);
         if (restore >= 2 && lights_.reloadWanted() && sampleClock_ >= nextReloadAt_ && linnBudget_ >= 6.0)
         {
@@ -1147,7 +1151,9 @@ private:
             for (const auto& m : msgs) alsa_.sendLinn(m);
             linnBudget_ -= 6.0;
             lights_.afterReload();
-            nextReloadAt_ = sampleClock_ + (uint64_t)(0.06 * sr_);
+            nextReloadAt_ = sampleClock_ + (uint64_t)(0.15 * sr_);
+            linnQuietUntil_ = sampleClock_ + (uint64_t)(0.02 * sr_);
+            return;
         }
         int sent = lights_.flush((int)linnBudget_, [this](const uint8_t* m) { alsa_.sendLinn(m); });
         linnBudget_ -= sent;
@@ -1235,6 +1241,7 @@ private:
             }
             const uint8_t z[2][3] = {{ch, 99, 127}, {ch, 98, 127}};
             for (const auto& m : z) alsa_.sendLinn(m);
+            linnQuietUntil_ = sampleClock_ + (uint64_t)(0.02 * sr_);
         }
         updateBaseColours(L);
         testLightsBlock(L);
@@ -1374,7 +1381,7 @@ private:
             for (int i = 0; i < litCount_; ++i)
             {
                 bool keep = false; for (int k = 0; k < newCount; ++k) keep |= newLit[k] == lit_[i];
-                if (!keep) { uint8_t m[3] = {(uint8_t)(0x80 | (linnCh_ & 15)), (uint8_t)lit_[i], 0}; alsa_.sendLinn(m); }
+                if (!keep) { uint8_t m[3] = {(uint8_t)(0x80 | (linnCh_ & 15)), (uint8_t)lit_[i], 0}; alsa_.sendLinn(m); rememberOff(lit_[i]); }
             }
             for (int k = 0; k < newCount; ++k)
             {
@@ -1384,7 +1391,9 @@ private:
             for (int k = 0; k < newCount; ++k) lit_[k] = newLit[k];
             litCount_ = newCount;
             lights_.clearLayer(2);
-            for (int i = 0; i < wantCount; ++i)
+            // the step after first, then the next step over it: on a cell both want, the next
+            // note's colour wins (0.5.6)
+            for (int i = wantCount - 1; i >= 0; --i)
             {
                 if (wantColour[i] == 0) continue;
                 if (fingering && wantCol[i] > 0) lights_.setCell(2, wantCol[i], wantRow[i], wantColour[i]);
@@ -1392,7 +1401,33 @@ private:
             }
             lightsDirty_ = false;
         }
+        healLights(connected);
         flushLights(frames);
+    }
+
+    // A message the instrument lost is never answered, so what should be lit is sent again now
+    // and then (0.5.6): the cell paints every 0.4 s (lit cells, and cells let go of in the last
+    // second), the Note On highlights and the Note Offs of the last second every 1.2 s.
+    void rememberOff(int pitch)
+    {
+        for (OffHeal& o : offHeal_) if (o.pitch == pitch) { o.left = 2; return; }
+        for (OffHeal& o : offHeal_) if (o.left == 0) { o.pitch = pitch; o.left = 2; return; }
+    }
+    void healLights(bool connected)
+    {
+        if (!connected || sampleClock_ < nextHealAt_) return;
+        nextHealAt_ = sampleClock_ + (uint64_t)(0.4 * sr_);
+        lights_.heal();
+        if (++healCount_ % 3 != 0) return;
+        for (int i = 0; i < litCount_; ++i)
+        { uint8_t m[3] = {(uint8_t)(0x90 | (linnCh_ & 15)), (uint8_t)lit_[i], 100}; alsa_.sendLinn(m); }
+        for (OffHeal& o : offHeal_)
+            if (o.left > 0)
+            {
+                --o.left;
+                bool lit = false; for (int i = 0; i < litCount_; ++i) lit |= lit_[i] == o.pitch;
+                if (!lit) { uint8_t m[3] = {(uint8_t)(0x80 | (linnCh_ & 15)), (uint8_t)o.pitch, 0}; alsa_.sendLinn(m); }
+            }
     }
 
     // ---- display ------------------------------------------------------------------------------------
@@ -1799,7 +1834,7 @@ private:
             // the instrument's Octave and Transpose (0.5.5): asked every 3 s while Linn Mode and
             // Read Transp are on (NRPN 299 for 36 and 37, left split); the answers arrive on Linn In
             if (getBool(gen::P_LINN) && getBool(gen::P_LINN_FOLLOW) && alsa_.linnConnected() &&
-                (linnAskNow_.exchange(false) || now - lastLinnAsk > std::chrono::seconds(3)))
+                (linnAskNow_.exchange(false) || now - lastLinnAsk > std::chrono::seconds(8)))
             { lastLinnAsk = now; linnAsk_.store(true); }
             alsa_.pollLinnNrpn([this](int param, int value) {
                 if (param == 36 && value >= 0 && value <= 10) readOct_ = value - 5;
@@ -2362,7 +2397,10 @@ private:
     int lastCursorStep_ = -1, stoppedBlocks_ = 0, linnGenSeen_ = -1;
     uint64_t sampleClock_ = 0, autoNextAt_ = 0, testUntil_ = 0, testWaitUntil_ = 0;
     double linnBudget_ = 0;
-    uint64_t nextReloadAt_ = 0;
+    uint64_t nextReloadAt_ = 0, linnQuietUntil_ = 0, nextHealAt_ = 0;
+    int healCount_ = 0;
+    struct OffHeal { int pitch = -1; int left = 0; };
+    OffHeal offHeal_[16];
     int testCh_ = 0;
     double lastPpq_ = -1;
     uint32_t baseSig_ = 0;

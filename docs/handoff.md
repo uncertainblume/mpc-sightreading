@@ -5,6 +5,22 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 
 ## Start here (next session)
 
+**0.5.6 (2026-11-20)** fixed the Next+1 lights lagging. The user's report: next notes red, the
+step after green; after playing a red note the green ones sometimes stayed green. Diagnosis from
+the firmware: MIDI is read one byte per main-loop pass into a small buffer, so bursts are lost
+while the instrument is busy, and the plugin assumed every paint arrived. The fixes:
+- self-contained paints (row, column and colour every time);
+- 1,500 messages a second over USB in bursts of 2 cells;
+- a 20 ms pause after NRPN 247/299;
+- healing every 0.4 s (lit and recently released cells), and every 1.2 s the Note On
+  highlights and recent Note Offs;
+- next-note colour wins on shared cells;
+- pattern reload at most every 150 ms; transposition asked every 8 s.
+
+Ask the user whether the guide keeps up now. If cells still flicker with Restore = Pattern n,
+the next step is a per-note "pattern colours" table on LAYOUT: exact, flicker-free restores by
+paint instead of reloads.
+
 **0.5.5 (2026-11-20)** answered the user's notes from playing 0.5.1:
 - LISTEN transport: pause/go on, seek with Bar/Note/jog/MPC playhead, SET for the loop ends.
 - Fit Range (Fold/Skip) for the LinnStrument's surface.
@@ -282,7 +298,7 @@ data-wheel steps on the new fields, the DIN route).
 Save your project first; plugins run without crash protection. Update with:
 
 ```bash
-python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.5-mpc.zip
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.6-mpc.zip
 ```
 
 It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps

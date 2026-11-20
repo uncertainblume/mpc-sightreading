@@ -380,7 +380,7 @@ static int selftest()
         l2.flush(1000, rec);
         CHECK(sent.size() == 3 && sent[2][1] == 22 && sent[2][2] == kLinnRed);
         sent.clear(); l2.clearLayer(2); l2.flush(1000, rec);
-        CHECK(sent.size() == 1 && sent[0][1] == 22 && sent[0][2] == kLinnCyan);   // back to its base, not off
+        CHECK(sent.size() == 3 && sent[2][1] == 22 && sent[2][2] == kLinnCyan);   // back to its base, not off
         sent.clear(); l2.invalidate(); l2.resetCursor(); l2.flush(1000, rec);
         int paints = 0; for (auto& m : sent) if (m[1] == 22) ++paints;
         CHECK(paints == 1 && l2.touchedCount() == 1);         // only the cell it ever used
@@ -391,7 +391,7 @@ static int selftest()
             l3.setReloadMode(true);
             l3.setCell(2, 5, 3, kLinnRed); l3.setCell(2, 6, 3, kLinnRed);
             l3.flush(1000, rec3);
-            CHECK(got.size() == 5 && !l3.reloadWanted());      // two paints: row, col, colour, col, colour
+            CHECK(got.size() == 6 && !l3.reloadWanted());      // two paints, each with its row and column
             got.clear(); l3.setCell(2, 5, 3, 0);                 // the guide lets go of one cell
             l3.flush(1000, rec3);
             CHECK(got.empty() && l3.reloadWanted());             // no paint: a reload is asked for
@@ -401,6 +401,23 @@ static int selftest()
             CHECK(p22 == 1 && !l3.reloadWanted());               // only the cell still lit is repainted
             got.clear(); l3.flush(1000, rec3);
             CHECK(got.empty());
+        }
+        // 0.5.6: every paint carries its own row and column; a heal sends again what is lit and
+        // what was let go of lately, so a paint the instrument lost is put right
+        {
+            LinnLights l4; std::vector<std::array<uint8_t, 3>> got;
+            auto rec4 = [&](const uint8_t* m) { got.push_back({m[0], m[1], m[2]}); };
+            l4.setCell(2, 5, 3, kLinnRed); l4.setCell(2, 6, 3, kLinnGreen);
+            l4.flush(1000, rec4);
+            CHECK(got.size() == 6 && got[3][1] == 21 && got[4][1] == 20 && got[4][2] == 6);   // the second paint names its row again
+            got.clear(); l4.setCell(2, 6, 3, 0); l4.flush(1000, rec4);          // let go of one
+            CHECK(got.size() == 3 && got[2][2] == kLinnClear);
+            got.clear(); l4.heal(); l4.flush(1000, rec4);
+            int reds = 0, clears = 0; for (auto& m : got) if (m[1] == 22) { reds += m[2] == kLinnRed; clears += m[2] == kLinnClear; }
+            CHECK(reds == 1 && clears == 1);                                      // the lit cell and the one let go of
+            for (int k = 0; k < 4; ++k) { got.clear(); l4.heal(); l4.flush(1000, rec4); }
+            clears = 0; for (auto& m : got) if (m[1] == 22 && m[2] == kLinnClear) ++clears;
+            CHECK(clears == 0);                                                   // a cell let go of is healed a few times, then left
         }
         // pacing: a flush never sends part of a cell
         sent.clear(); for (int c = 1; c <= 10; ++c) l2.setCell(3, c, c % 8, kLinnGreen);

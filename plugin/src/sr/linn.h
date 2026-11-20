@@ -194,6 +194,7 @@ public:
     {
         std::memset(sent_, 0, sizeof(sent_)); std::memset(layer_, 0, sizeof(layer_));
         std::memset(base_, 0, sizeof(base_)); std::memset(touched_, 0, sizeof(touched_));
+        std::memset(recent_, 0, sizeof(recent_));
     }
 
     // Layers: 0 key, 1 bars, 2 guide, 3 test. Colour 0 = nothing from that layer.
@@ -274,17 +275,41 @@ public:
                 uint8_t target = w ? w : (base_[c][r] ? base_[c][r] : idle_);
                 if (sent_[c][r] == target) continue;
                 if (msgs + 3 > maxMsgs) { pending = true; continue; }
+                if (!w && sent_[c][r] != 0 && sent_[c][r] != 0xFF) recent_[c][r] = 3;   // just let go of: healed a while
                 touched_[c][r] = true;
+                // every paint carries its own row and column (0.5.6): the instrument reads MIDI one
+                // byte per pass of its main loop into a small buffer, and while it is busy (a
+                // pattern reload, a settings answer, many touches) a byte can be lost; a paint
+                // that leaned on an earlier row or column would then land on the wrong cell
                 uint8_t m[3];
-                if (cursorRow_ != r) { m[0] = 0xB0; m[1] = 21; m[2] = (uint8_t)r; send(m); ++msgs; cursorRow_ = r; }
-                if (cursorCol_ != c) { m[0] = 0xB0; m[1] = 20; m[2] = (uint8_t)c; send(m); ++msgs; cursorCol_ = c; }
-                m[0] = 0xB0; m[1] = 22; m[2] = target; send(m); ++msgs;
+                m[0] = 0xB0; m[1] = 21; m[2] = (uint8_t)r; send(m);
+                m[0] = 0xB0; m[1] = 20; m[2] = (uint8_t)c; send(m);
+                m[0] = 0xB0; m[1] = 22; m[2] = target; send(m);
+                msgs += 3;
                 sent_[c][r] = target;
             }
         dirty_ = pending;
         return msgs;
     }
-    void resetCursor() { cursorCol_ = cursorRow_ = -1; }
+    void resetCursor() {}   // (kept for callers: paints no longer lean on an earlier row/column)
+    // Sends again, at the next flushes, what is lit now and what was let go of lately: a paint the
+    // instrument lost is put right within one heal (0.5.6). In pattern mode cells let go of are
+    // restored by a reload, not here.
+    void heal()
+    {
+        for (int c = 1; c < kCols; ++c)
+            for (int r = 0; r < kRows; ++r)
+            {
+                bool lit = false;
+                for (int l = 0; l < kLayers && !lit; ++l) lit = layer_[l][c][r] != 0;
+                if (lit && sent_[c][r] != 0) { sent_[c][r] = 0xFF; dirty_ = true; }
+                else if (!lit && recent_[c][r] > 0)
+                {
+                    --recent_[c][r];
+                    if (!reloadMode_) { sent_[c][r] = 0xFF; dirty_ = true; }
+                }
+            }
+    }
 
 private:
     uint8_t layer_[kLayers][kCols][kRows];
@@ -294,7 +319,7 @@ private:
     bool dirty_ = false;
     uint8_t idle_ = kLinnClear;
     bool reloadMode_ = false, reloadWanted_ = false;
-    int cursorCol_ = -1, cursorRow_ = -1;
+    uint8_t recent_[kCols][kRows];           // heals left for a cell lately let go of
 };
 
 } // namespace sr

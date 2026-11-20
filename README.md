@@ -22,9 +22,11 @@ Carlos, the pioneer without whom none of this would be possible.*
 
 If anyone finds any of this this super useful and can afford it, send me a tip on PayPal, I'm hilariously unemployed: <img width="500" height="500" alt="paypalqrcode" src="https://github.com/user-attachments/assets/f481d192-200a-4d61-a5a7-09f00cb26175" />
 
-**Status: version 0.5.5.** Sight Reader has been in use on an MPC Live III since 0.1: the pages,
+**Status: version 0.5.6.** Sight Reader has been in use on an MPC Live III since 0.1: the pages,
 the notation, the cursor, the practice modes, LISTEN, the piece list and the LinnStrument's lights
-work on the device. 0.5.5 answers the notes from playing 0.5.1:
+work on the device. 0.5.6 makes the LinnStrument's guide lights keep up: the next notes turn to
+their colour as soon as you play, and a colour the instrument missed is sent again within a
+fraction of a second. 0.5.5 answered the notes from playing 0.5.1:
 
 - **LISTEN transport**: pause and go on from the same place. The Bar field and the jog wheel move
   what you hear, and **SET** next to Loop From / Loop To marks the loop at the bar you hear.
@@ -36,9 +38,9 @@ work on the device. 0.5.5 answers the notes from playing 0.5.1:
   - It follows the instrument's Octave and Transpose, read from the instrument.
 - **The jog wheel steps evenly**: one step per click on every number (Tempo 100, 101, 102...).
 
-0.5.5 passes the SDK's validator (0 errors, 0 warnings), its host simulator, and an end-to-end
-test that plays pieces through the plugin's VST interface and checks the screen. Its new features
-have not yet been tried on the MPC.
+0.5.6 passes the SDK's validator (0 errors, 0 warnings), its host simulator, and an end-to-end
+test that plays pieces through the plugin's VST interface and checks the screen. The 0.5.5 and
+0.5.6 changes have not yet been tried on the MPC.
 
 ## What you can use it with
 
@@ -114,7 +116,7 @@ sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a s
 You need MPC OS 3.10.1 or later with **Preferences → Enhancements (Beta) → Enable Enhancements**
 and **External Plugin Support** switched on.
 
-1. Download `sight-reader-0.5.5-mpc.zip` from the
+1. Download `sight-reader-0.5.6-mpc.zip` from the
    [releases](https://github.com/uncertainblume/mpc-sightreading/releases) (the same file is in
    [dist/](dist/)) and unzip it, or build it yourself (below).
 2. Copy the folder `Practice Tools - VST - Sight Reader` into `VST2 Plugins` at the top of the
@@ -123,7 +125,7 @@ and **External Plugin Support** switched on.
    first):
 
    ```bash
-   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.5-mpc.zip
+   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.6-mpc.zip
    ```
 3. Restart the MPC app. Sight Reader is under **External Plugins**. Projects that already use it
    keep their settings.
@@ -189,7 +191,7 @@ tools/run_tests.sh
 
 The first build fetches Akai's SDK (pinned commit) and, through it, the Zig cross compiler. The
 output folder is `plugin/build/Practice Tools - VST - Sight Reader/`. Releases are built by the
-[release workflow](.github/workflows/release.yml) from tags like `v0.5.5`.
+[release workflow](.github/workflows/release.yml) from tags like `v0.5.6`.
 
 ## Read more
 

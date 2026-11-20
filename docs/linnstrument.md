@@ -124,9 +124,21 @@ When the plugin is done with a painted cell, **Restore** decides what happens to
 - **Note Colors**: the cell gets the COLOR page's colour for its note, in the LinnStrument's
   nearest colour. It is an approximation, and with a custom pattern it drifts from your layout.
 
-Cells the plugin never painted are never written. Messages are paced to the route: up to about
-3,000 a second over USB (the instrument's USB side reaches its processor through a 115,200-baud
-serial link) and 900 a second through a DIN port (31,250 baud). If your layout ever gets mixed
+Cells the plugin never painted are never written.
+
+**How the lights stay right (0.5.6).** The instrument reads incoming MIDI one byte per pass of
+its main loop, into a small buffer (`handleMidiInput`). While it is busy, a quick burst can
+overflow it: reloading a light pattern or redrawing after a settings question redraws the whole
+surface, and many touches keep it busy too. So:
+- **Pacing:** messages go in small bursts, up to about 1,500 a second over USB and 900 a second
+  through a DIN port.
+- **Pauses:** there is a short pause after a request that makes the instrument redraw.
+- **Self-contained paints:** every paint names its row and column.
+- **Healing:** every 0.4 s, what should be lit (and what was let go of in the last second) is
+  sent again, and every 1.2 s the Note On highlights and recent Note Offs. A lost message is put
+  right within a fraction of a second.
+
+On a cell both guide steps want, the next note's colour wins. If your layout ever gets mixed
 up, choosing your custom pattern again on the instrument (or switching it off and on) brings it
 back.
 

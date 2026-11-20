@@ -1,9 +1,36 @@
 # Changelog
 
 Each version's zip is attached to its [GitHub release](https://github.com/uncertainblume/mpc-sightreading/releases)
-(tags `v0.1.0` ... `v0.5.5`). Install or update by copying the folder in the zip to `VST2 Plugins`
+(tags `v0.1.0` ... `v0.5.6`). Install or update by copying the folder in the zip to `VST2 Plugins`
 on the MPC's internal drive; projects keep their settings, and new settings start at their
 defaults.
+
+## [0.5.6] - 2026-11-20
+
+The LinnStrument guide lights keep up.
+
+### Fixed
+- **Next+1 lights lagged or stuck.** With the next notes in one colour and the step after in
+  another, playing a next note sometimes left the step-after notes in their colour instead of
+  turning to the next-note colour, so the surface showed only step-after notes.
+  - The cause, from the firmware: the LinnStrument reads incoming MIDI one byte per pass of its
+    main loop, into a small buffer. While it is busy (reloading a light pattern, redrawing after
+    a settings question, many touches), a quick burst can overflow it. The plugin assumed every
+    colour had arrived, so a lost one stayed wrong.
+  - Every paint now carries its own row and column, so one lost message cannot send the
+    following colours to the wrong cell.
+  - The plugin sends at a gentler rate (1,500 messages a second by USB) in small bursts, and
+    pauses for a moment after a request that makes the instrument redraw everything.
+  - Every 0.4 s it sends again what should be lit, and what it let go of lately. The Note On
+    highlights and their Note Offs are re-sent every 1.2 s. A lost message is put right within a
+    fraction of a second.
+- **The next note lost to the note after.** On a cell both steps want, the next note's colour
+  now wins over the step after's.
+
+### Changed
+- With Restore = Pattern n, the light pattern is reloaded at most every 150 ms (it was 60 ms),
+  since each reload makes the instrument redraw everything.
+- The instrument's Octave and Transpose are asked for every 8 s (it was 3 s).
 
 ## [0.5.5] - 2026-11-20
 
@@ -212,6 +239,7 @@ First version.
   project.
 - **Library tool.** Fetches public-domain pieces and copies them to the MPC over SSH.
 
+[0.5.6]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.6
 [0.5.5]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.5
 [0.5.1]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.1
 [0.5.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.0

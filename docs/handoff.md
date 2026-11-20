@@ -5,9 +5,36 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 
 ## Start here (next session)
 
-**Where things are (end of 2026-11-19).**
+**0.5.5 (2026-11-20)** answered the user's notes from playing 0.5.1:
+- LISTEN transport: pause/go on, seek with Bar/Note/jog/MPC playhead, SET for the loop ends.
+- Fit Range (Fold/Skip) for the LinnStrument's surface.
+- The guide moves on as notes are pressed, re-lights after a release, and has After Clr.
+- The LinnStrument's Octave/Transpose (LAYOUT, read by NRPN 299 over a new input port).
+- The accompaniment plays the other hand in time and waits in Wait mode; it is on by default.
+- Even jog-wheel steps on every number setting.
+- Rebuilds keep the bar.
 
-- 0.5.0 is released.
+All tested on a computer, none on the MPC yet. Ask the user to try, in this order:
+1. The jog wheel on Tempo and on a channel.
+2. LISTEN pause/SET.
+3. One hand with Accomp on and an instrument track on Sight Reader MIDI Out.
+4. Hall of the Mountain King with Fit Range = Fold.
+5. Transposing the LinnStrument with a colour guide (the LINN status line should say "Read:
+   Octave ...").
+
+**Next, 0.6.0** (the user's plan): an easier way to load new MIDI files than the command line.
+Discuss strategies with the user before building. Ideas to bring:
+- a small web page served from the MPC (or from the plugin);
+- a watched "Inbox" folder on a USB stick, copied in by RESCAN;
+- pulling from a shared Google Drive or Dropbox link;
+- mpcremote integration.
+
+The user said 0.6.0 comes after 0.5.5 is tried.
+
+**Where things were (end of 2026-11-19).**
+
+- 0.5.0 is released (0.5.1 and 0.5.5 since; every release goes to `main` with the README
+  updated, and the README keeps the user's PayPal tip line and QR code).
   - `main` holds it (PRs #1-#3).
   - GitHub releases v0.1.0 to v0.5.0 exist, each with its zip; v0.5.0 is Latest and points at
     `main` (a9cf405).
@@ -255,7 +282,7 @@ data-wheel steps on the new fields, the DIN route).
 Save your project first; plugins run without crash protection. Update with:
 
 ```bash
-python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.1-mpc.zip
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.5-mpc.zip
 ```
 
 It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps

@@ -5,10 +5,11 @@ can also light the instrument: the next notes to play, a whole passage, suggeste
 project's key. Switch **Linn Mode** on (LINN page). Nothing here changes your LinnStrument's own
 settings, and **CLEAR LIGHTS** takes away everything the plugin lit.
 
-> **Status (0.5.0): work in progress.** The light messages reach the LinnStrument (TEST LIGHTS
-> works; if it stops, see below), but the guide lights are not worked out: with Guide = Next and
-> Next+1 the lights change, with several odd behaviours still to debug. The rest of this page
-> describes how the features are meant to work.
+> **Status (0.5.5).** The light messages reach the LinnStrument (TEST LIGHTS works; if it stops,
+> see below). 0.5.1 stopped the guide from recolouring your own layout. 0.5.5 makes it move on
+> as you press, gives the note after its own colour, folds out-of-range notes onto the surface
+> and follows the instrument's transposition. Those 0.5.5 changes are not yet tried on the
+> instrument.
 
 ![LINN, Night](img/linn-night.png)
 
@@ -59,8 +60,11 @@ known yet, so if the lights stop, try these in order:
 
 ## Guide lights
 
-**Guide**: Off, Next (the notes to play now), Next+1 (now, plus the step after in white),
-Fingered (only the suggested cell, in the finger's colour). **Guide Clr**:
+**Guide**: Off, Next (the notes to press next), Next+1 (those, plus the step after in **After
+Clr**), Fingered (only the suggested cell, in the finger's colour). The guide always shows the
+notes still to press. A note you have played goes dark and the next one lights, also when you
+play ahead of the clock in Rhythm or Flow. **Guide Clr** (and **After Clr**, for the step
+after):
 
 - **Played** uses the LinnStrument's own highlight: a Note On sent to the instrument lights every
   cell of that note in the *Played* colour, and the Note Off clears it (`ls_midi.ino`,
@@ -69,9 +73,29 @@ Fingered (only the suggested cell, in the finger's colour). **Guide Clr**:
 - Any other colour paints the cells with CC 20 (column), CC 21 (row), CC 22 (colour). This needs
   the layout settings (LAYOUT, below).
 
-**Linn Ch** (default 2): in MPE mode, a per-note channel of the split you play (2 to 16 with the
-factory settings; channel 1 is the MPE main channel, which the highlight ignores). In One Channel
-mode, that channel. 0.4.0 defaulted to 1, which an MPE LinnStrument ignores.
+**Linn Ch** (LAYOUT, default 2): in MPE mode, a per-note channel of the split you play (2 to 16
+with the factory settings; channel 1 is the MPE main channel, which the highlight ignores). In
+One Channel mode, that channel. 0.4.0 defaulted to 1, which an MPE LinnStrument ignores.
+
+When you release a highlighted note, the instrument clears the cell under your finger. If that
+note is still (or again) the one to press, the plugin lights it again.
+
+With Played in both colours, the two steps look the same: pick a colour for After Clr to tell
+them apart. A colour paints the cells, so with a custom light pattern set Restore = Pattern n.
+
+## Fit Range: everything on the surface
+
+With Linn Mode on, **Fit Range** decides what happens to notes the surface cannot play:
+
+- **Fold** (default): such a note moves by octaves onto the surface. The staff shows it where it
+  is played, so *In the Hall of the Mountain King*'s low opening notes come up where you can
+  reach them. The piece is reloaded when the surface's range changes, keeping your bar.
+- **Skip**: they stay on the staff but are not asked for. With Accomp = All they go to MIDI Out.
+- **Off**: every note is asked for, as written.
+
+The surface's range runs from the bottom-left cell to the top-right cell: Lowest Note, the
+instrument's Octave and Transpose, Row Offset and size (LAYOUT). With the defaults it is F#1 to
+F6.
 
 While **LISTEN** plays (PLAY page), the guide lights each note as it sounds instead of the next
 one to play: watch the shape of a passage on the surface while you hear it.
@@ -166,14 +190,30 @@ guide uses it):
 | Row Offset | +5 (fourths) | +4, +3, +6, +7 or Octave |
 | Lowest Note | F#1 (30) | the note of the bottom-left playing cell. Fourths: 30; octave offset: 18; add 12 for each octave you transposed up |
 | Left-Handed | Off | mirrors the columns |
+| Linn Ch | 2 | the channel of the Played highlights (see Guide lights) |
+| Linn Octave, Linn Transp | 0, 0 | the instrument's own Octave and Transpose (pitch) settings |
+| Read Transp | On | ask the instrument for those two every few seconds |
 
 These follow the firmware's mapping (`determineRowOffsetNote`, `getNoteNumber`):
-`note = lowest + row × offset + column - 1`. Splits and guitar tuning are not modelled; with a
+`note = lowest + 12 × octave + transpose + row × offset + column - 1`.
+
+**Transposing on the instrument.** When you transpose the LinnStrument, every cell plays another
+note, so a colour, fingering or LIGHT BARS paint would land on the wrong cell. Played highlights
+are placed by the instrument itself and always land right.
+- With **Read Transp** on, the plugin asks for the left split's Octave and Transpose every three
+  seconds: NRPN 299 "send me the value of" for parameters 36 and 37. It reads the answers
+  through its own input port on the instrument's USB connection, and moves everything with
+  them.
+- The LINN status line shows what it read.
+- If nothing comes back (over the MIDI jacks the answer goes to the MPC instead), set Linn
+  Octave and Linn Transp by hand with Read Transp off. Splits and guitar tuning are not modelled; with a
 split active, set Lowest Note for the split you play in.
 
 ## How the messages travel
 
-The plugin opens its own ALSA sequencer client, "Sight Reader", with two ports:
+The plugin opens its own ALSA sequencer client, "Sight Reader", with two ports, and a second,
+input-only client ("Sight Reader Linn In", not offered to tracks) whose port listens to the
+LinnStrument for its answers. The output client's ports:
 
 - **Linn Out** cannot be subscribed to by anyone else (read-only, not exported), so light
   messages reach only the LinnStrument, never an MPC track listening to "All Ports" (where a

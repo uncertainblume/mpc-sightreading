@@ -445,6 +445,11 @@ int main(int argc, char** argv)
         CHECK(p.e->getParameter(p.e, gen::P_LISTEN) >= 0.5f);
         CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 10);
         p.e->setParameter(p.e, gen::P_LISTEN, 0.0f); p.run(0.1);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 4);         // 0.5.5: LISTEN off pauses it
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f); p.run(0.2);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 10);        // and on again goes on
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.1);        // RESTART stops it
+        CHECK(p.e->getParameter(p.e, gen::P_LISTEN) < 0.5f);
         CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 9);         // LOOP (practice) again
         p.e->setParameter(p.e, gen::P_LOOP, 0.0f); p.run(0.1);
     }
@@ -570,6 +575,81 @@ int main(int argc, char** argv)
         std::printf("test lights: '%s'\n", p.text(gen::kTextBase + gen::T_MESSAGE).c_str());
         CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("nothing connected") != std::string::npos);
         CHECK(p.e->getParameter(p.e, gen::P_LINN_TEST) < 0.5f);
+    }
+    // ---- 0.5.5: the data wheel steps evenly ------------------------------------------------------
+    {
+        setPlain(p, gen::P_TEMPO, 100); p.run(0.02);
+        wheel(p, gen::P_TEMPO, 1); p.run(0.02);
+        std::printf("wheel: tempo %d", plainOf(p, gen::P_TEMPO));
+        CHECK(plainOf(p, gen::P_TEMPO) == 101);                               // not 102
+        // a host that adds its hundredth to the value it last sent, not the one read back
+        float host = p.e->getParameter(p.e, gen::P_TEMPO) + 0.0f;
+        p.e->setParameter(p.e, gen::P_TEMPO, host + 0.01f); p.run(0.02);
+        p.e->setParameter(p.e, gen::P_TEMPO, host + 0.02f); p.run(0.02);
+        std::printf(" -> %d", plainOf(p, gen::P_TEMPO));
+        CHECK(plainOf(p, gen::P_TEMPO) == 103);
+        setPlain(p, gen::P_TIMING, 160); p.run(0.02);
+        wheel(p, gen::P_TIMING, 1); p.run(0.02);
+        std::printf(", timing %d", plainOf(p, gen::P_TIMING));
+        CHECK(plainOf(p, gen::P_TIMING) == 165);                              // round 5 ms steps
+        setPlain(p, gen::P_OUT_CH, 1); p.run(0.02);
+        wheel(p, gen::P_OUT_CH, 1); p.run(0.02);
+        std::printf(", out ch %d\n", plainOf(p, gen::P_OUT_CH));
+        CHECK(plainOf(p, gen::P_OUT_CH) == 2);                                // one click, one channel
+        setPlain(p, gen::P_OUT_CH, 1); setPlain(p, gen::P_TIMING, 160); p.run(0.02);
+    }
+    // ---- 0.5.5: LISTEN pauses, moves with the Bar field, and SET marks the loop --------------------
+    {
+        CHECK(openFolder(p, "Test"));
+        p.e->setParameter(p.e, gen::P_PICK0, 1.0f); p.waitWorker(0.3);
+        p.e->setParameter(p.e, gen::P_LOAD, 1.0f); p.waitWorker(1.0);
+        p.e->setParameter(p.e, gen::P_LOOP, 0.0f);
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f); p.run(1.0);
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 10);
+        p.e->setParameter(p.e, gen::P_LISTEN, 0.0f); p.waitWorker(0.3);
+        int barPaused = digits(p, gen::kD_d_bar, 3);
+        p.run(1.5);
+        std::printf("listen paused at bar %d (still %d), status %d, message '%s'\n", barPaused, digits(p, gen::kD_d_bar, 3),
+                    p.frame(gen::kD_status, gen::kStatusFrames), p.text(gen::kTextBase + gen::T_MESSAGE).c_str());
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 4 && digits(p, gen::kD_d_bar, 3) == barPaused);
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("Paused at bar") != std::string::npos);
+        wheel(p, gen::P_GOTO_BAR, 2); p.run(0.1);                              // the Bar field moves what you hear
+        std::printf("after two clicks on Bar: bar %d\n", digits(p, gen::kD_d_bar, 3));
+        CHECK(digits(p, gen::kD_d_bar, 3) == barPaused + 2);
+        p.e->setParameter(p.e, gen::P_LOOP_SET_FROM, 1.0f); p.run(0.1);       // SET: the loop starts here
+        CHECK(plainOf(p, gen::P_LOOP_FROM) == barPaused + 2);
+        CHECK(p.e->getParameter(p.e, gen::P_LOOP_SET_FROM) < 0.5f);
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f); p.run(1.0);              // goes on from there
+        CHECK(p.frame(gen::kD_status, gen::kStatusFrames) == 10 && digits(p, gen::kD_d_bar, 3) >= barPaused + 2);
+        p.e->setParameter(p.e, gen::P_PLAY, 1.0f); p.run(0.1);                // PLAY stops it
+        CHECK(p.e->getParameter(p.e, gen::P_LISTEN) < 0.5f);
+        p.e->setParameter(p.e, gen::P_PLAY, 0.0f); p.run(0.1);
+    }
+    // ---- 0.5.5: Fit Range = Fold moves notes the LinnStrument cannot play onto it -----------------
+    {
+        p.e->setParameter(p.e, gen::P_LINN, 1.0f); p.waitWorker(0.5);
+        CHECK(openFolder(p, "Ottava"));
+        p.e->setParameter(p.e, gen::P_PICK0, 1.0f); p.waitWorker(0.3);
+        p.e->setParameter(p.e, gen::P_LOAD, 1.0f); p.waitWorker(1.0);
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.2);
+        p.block({{0x90, 88, 100}, {0x90, 48, 90}}); p.run(0.05);              // E6 (on the surface: up to F6) and C3
+        p.block({{0x90, 89, 100}}); p.run(0.05);                               // F6
+        std::printf("next after F6 with Fold: frame %d (G5 %d, G6 %d)\n", p.frame(gen::kD_nextname, gen::kNoteNameFrames),
+                    noteNameFrame(79), noteNameFrame(91));
+        CHECK(p.frame(gen::kD_nextname, gen::kNoteNameFrames) == noteNameFrame(79));   // G6 folded to G5
+        // the instrument an octave down (Linn Octave -1): the surface is F#0-F5, so E6 F6 G6 fold to E5 F5 G4
+        setPlain(p, gen::P_LINN_FOLLOW, 0); setPlain(p, gen::P_LINN_OCT, -1); p.waitWorker(1.0);
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.2);
+        p.block({{0x90, 76, 100}, {0x90, 48, 90}}); p.run(0.05);
+        p.block({{0x90, 77, 100}}); p.run(0.05);
+        std::printf("next with the LinnStrument an octave down: frame %d (G4 %d)\n", p.frame(gen::kD_nextname, gen::kNoteNameFrames), noteNameFrame(67));
+        CHECK(p.frame(gen::kD_nextname, gen::kNoteNameFrames) == noteNameFrame(67));
+        setPlain(p, gen::P_LINN_OCT, 0); setPlain(p, gen::P_LINN_FOLLOW, 1); p.waitWorker(0.5);
+        p.e->setParameter(p.e, gen::P_LINN, 0.0f); p.waitWorker(1.0);         // Linn Mode off: as written again
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.2);
+        p.block({{0x90, 88, 100}, {0x90, 48, 90}}); p.run(0.05);
+        p.block({{0x90, 89, 100}}); p.run(0.05);
+        CHECK(p.frame(gen::kD_nextname, gen::kNoteNameFrames) == noteNameFrame(91));
     }
     std::printf("automate %d updateDisplay %d\n", g_automate, g_updates);
     p.d(effMainsChanged, 0, 0); p.d(effClose);

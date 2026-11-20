@@ -186,6 +186,37 @@ off. Messages are paced by time, not by block (the MPC's block size varies): abo
 by USB, whose last stage is a 115,200-baud serial link inside the instrument, and 900 a second
 through a 31,250-baud DIN port.
 
+## 0.5.5: the accompaniment clock, even wheel steps, the instrument's transposition
+
+**Accompaniment in Wait mode.** Wait mode has no clock, so the hand you are not practising used
+to be sent only for steps with nothing for you: all at once as they were skipped. Its notes that
+fall with yours were never sent. Now:
+- the engine keeps a second position for the accompaniment;
+- when you complete a step, the accompaniment catches up to it (its notes in that step sound
+  with yours);
+- it then runs at the tempo towards the next step that wants you, and stops just short of it,
+  so a note held up to there keeps sounding while it waits;
+- after your last note it runs on to the end of the piece.
+
+In Rhythm and Flow the clock already carried it.
+
+**The wheel.** The MPC moves a number by a hundredth of its range per click (Akai's
+ui-reference 3.3: the coarse increment), and choices with replacement strings by one step. For
+numbers, the plugin recognises a click and replaces it with one step from where the value was:
+- a click is a move of about a hundredth, against the value it last showed or the host's last
+  value, or a shorter move cut off by either end of the range;
+- the step is one unit, or a round number of milliseconds on long time ranges.
+
+Other moves pass unchanged.
+
+**Transposition.** Cell paints address cells, so they move with the instrument's Octave and
+Transpose, which the plugin cannot see.
+- It asks: NRPN 299 makes the firmware answer with a parameter's value on the same channel
+  (`sendNrpnParameter`, `midiSendNRPN`).
+- The answer is read on a second, input-only ALSA client subscribed to the instrument's port.
+  This keeps the audio thread's output handle unshared and does not depend on what the MPC
+  routes to the track.
+
 ## Files on the MPC
 
 All inside `<drive>/SightReader/` next to `VST2 Plugins/` (the plugin finds its own folder with

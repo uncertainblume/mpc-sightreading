@@ -6,7 +6,9 @@ control the same settings. Press LINN's key again for **LAYOUT**, the LinnStrume
 16 Q-Links follow the on-screen controls row by row (top row = Q-Links 13-16). On PLAY, Q-Links
 5-8 work the header's fields, **Bar, Note, BPM** and Loop Bars (the MPC draws its frame round
 them), and 1-4 are Timing, Pitch Tol, Chords and Error Vol. Tap a control to give it the data
-wheel; double-tap it (or push the wheel) for the MPC's large editor or list. The MPC's preset menu
+wheel; double-tap it (or push the wheel) for the MPC's large editor or list. Each click of the
+wheel moves a number by one step (Tempo 100, 101, 102...; Timing by 5 ms and the sound's
+envelope times by 20 ms); a menu moves one choice. The MPC's preset menu
 offers five practice presets (Wait exact, Wait relaxed, Flow medium, Rhythm strict, Rhythm slow);
 they change only practice settings.
 
@@ -58,7 +60,8 @@ units (160 ms, 30%, +2 st, Ch 1).
   instrument sounds an octave away from the music (Pitch Tol = Octave accepts any octave, or
   transpose the instrument).
 - **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; Play, Listen, Restart,
-  Loop, **Loop From** and **Loop To**. The loop's three numbers keep each other right: moving
+  Loop, **Loop From** and **Loop To**, each with a **SET** button that puts it at the bar you
+  hear while LISTEN is on (else the bar the cursor is in). The loop's three numbers keep each other right: moving
   Loop From moves Loop To with it (same length), moving Loop To past Loop From pulls Loop From
   along, Loop Bars (Q-Link 8 or MORE) stretches it from Loop From, and the loop never runs past the
   end of the piece.
@@ -72,7 +75,15 @@ listens to that port plays them: a plugin, a keygroup program, anything. While i
 cursor follows the music (status LISTEN), the header shows the notes sounding, colour dots stay
 on, and in Linn Mode the LinnStrument lights each note as it sounds (with Guide on). Nothing you
 play is graded meanwhile and your practice position stays where it was. It stops at the end, or
-when you press LISTEN again, PLAY or RESTART.
+when you press PLAY or RESTART.
+
+**Its transport (0.5.5):** press LISTEN while it plays to **pause** (status PAUSED; the cursor
+stays where you stopped) and again to **go on** from there. While LISTEN is on, playing or
+paused, the header's **Bar** and **Note** fields (tap one, turn the jog wheel, or Q-Links 5 and
+6) move what you hear, and so does the MPC's playhead with Start = MPC Play. To find a loop by
+ear: play, pause at the start of the passage, press **SET** by Loop From; go on, pause at its
+end, press **SET** by Loop To; switch **Loop** on and LISTEN plays just that, round and round.
+Switching Loop on or off while it plays changes what it plays.
 
 Setting it up once: on the instrument track you want to hear it on, MIDI input **Sight Reader
 MIDI Out**, channel All (or the channel set in Out Ch), monitor **In**. To hear it on the same
@@ -179,9 +190,10 @@ shapes it), **Remind** and **Reminders** (after a mistake, the sound comes again
 MORE: **Range Lo / Hi** and **Out Range** (Play everything; Skip: notes outside are shown but not
 asked for; Hide: they are taken out of the score), **Mask** (hide notes once played, or hide the
 bar you are in so you must read ahead), **Note Names** (header shows the next notes, or next and
-played), **Accomp** (sends the other hand's notes, or all notes not required, to the port
-"Sight Reader MIDI Out" so an instrument track can play them; route a track's input to that
-port), **Split**, **Transpose** (reloads the piece), **Tempo Ramp** (+2/5/10 % after each loop
+played), **Accomp** (on by default: practising one hand, the other hand plays in time to the
+port "Sight Reader MIDI Out", so an instrument track listening to it plays along; in Wait mode it
+waits for you whenever your next note is due, and its notes that fall with yours sound when you
+play yours. All also sends the notes left out for being out of range), **Split**, **Transpose** (reloads the piece), **Tempo Ramp** (+2/5/10 % after each loop
 pass at or above **Goal**), **Loop Bars** and **Loop To**, **Auto Next** (On by default: two
 seconds after a piece ends, the next one in its folder or the Playlist loads; not while Loop is
 on). The bottom row is everything that goes out of "Sight
@@ -230,8 +242,11 @@ The dot is sized so a half or whole note still looks hollow; on the hand you are
 ## LINN and LAYOUT
 
 **Linn Mode**, **Linn Port** (USB, or the MPC's MIDI Out A/B to the LinnStrument's MIDI In),
-**TEST LIGHTS**, the guide, fingering, LIGHT BARS, Key Lights and **Restore**; press LINN again
-for LAYOUT (size, row offset, lowest note, left-handed). See [linnstrument.md](linnstrument.md).
+**Fit Range** (fold notes the surface cannot play onto it, or skip them), **TEST LIGHTS**, the
+guide (**Guide Clr** for the next notes, **After Clr** for the step after), fingering, LIGHT
+BARS, Key Lights and **Restore**. Press LINN again for LAYOUT: size, row offset, lowest note,
+left-handed, **Linn Ch**, and the instrument's **Octave** and **Transpose** (read from it with
+**Read Transp** on). See [linnstrument.md](linnstrument.md).
 
 ## STATS
 

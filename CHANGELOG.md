@@ -1,9 +1,64 @@
 # Changelog
 
 Each version's zip is attached to its [GitHub release](https://github.com/uncertainblume/mpc-sightreading/releases)
-(tags `v0.1.0` ... `v0.5.1`). Install or update by copying the folder in the zip to `VST2 Plugins`
+(tags `v0.1.0` ... `v0.5.5`). Install or update by copying the folder in the zip to `VST2 Plugins`
 on the MPC's internal drive; projects keep their settings, and new settings start at their
 defaults.
+
+## [0.5.5] - 2026-11-20
+
+From the notes taken while playing 0.5.1: mostly fixes, and the transport, accompaniment and
+LinnStrument behaviour asked for.
+
+### Added
+- **LISTEN transport**
+  - LISTEN is play/pause: pressing it while it plays pauses where it is (status PAUSED), and
+    pressing it again goes on from there.
+  - While LISTEN is on, playing or paused, the Bar and Note fields, the jog wheel and the MPC's
+    playhead move what you hear.
+  - Switching Loop on or off, or moving the loop, while it plays changes what it plays.
+  - **SET** buttons next to Loop From and Loop To mark the loop at the bar you hear, or the bar
+    the cursor is in.
+- **Fit Range** (LINN, with Linn Mode on): notes the LinnStrument's surface cannot play are
+  folded by octaves onto it (**Fold**, the default), or left out (**Skip**). The surface's range
+  comes from LAYOUT and the instrument's transposition. For example, the very low notes that
+  open *In the Hall of the Mountain King* move up to the surface.
+- **After Clr** (LINN): the colour of the step after the next one in Next+1. Played uses the
+  instrument's own highlight.
+- **Linn Octave, Linn Transp and Read Transp** (LAYOUT): the LinnStrument's Octave and Transpose
+  settings. Colours, fingering and Fit Range follow them, so they land on the right cells when
+  you transpose the instrument. With Read Transp on (the default) they are read from the
+  instrument every few seconds over USB (NRPN 299 requests, answered on a new input port).
+- A setting that rebuilds the piece (Linn Mode, Fit Range, the layout, Transpose...) keeps the
+  bar you were in.
+
+### Changed
+- **Accompaniment**
+  - With one hand practised, the other hand now plays to Sight Reader MIDI Out in time. In Wait
+    mode it waits for you whenever your next note is due, and its notes that fall with yours
+    sound when you play yours.
+  - Accomp is **on** (Other Hand) by default. Projects keep their saved setting, so turn it on in
+    MORE if yours says Off.
+- **Guide lights**
+  - The guide always shows the next notes still to press. A note you have played goes dark, and
+    the next one lights, also when you play ahead of the clock in Rhythm or Flow.
+  - A highlighted note you release is lit again if it is still the one to press: the instrument
+    clears the cell under your finger.
+- **LINN and LAYOUT pages**: Fit Range and After Clr are on LINN; Linn Ch moved to LAYOUT with
+  the transposition settings.
+
+### Fixed
+- **The jog wheel skipped values** on number settings. The MPC moves a number by a hundredth of
+  its range per click (Tempo 100, 102, 104, 105...; a 1-16 channel needing several clicks).
+  Every number setting now moves one step per click; long millisecond ranges move in round steps
+  (Timing 5 ms, envelope times 20 ms). This works whether the MPC adds to the value it reads back
+  or to the one it last sent, and at either end of a range.
+- **The accompaniment was missing notes** in Wait mode: the other hand's notes that fall with
+  yours were never sent, and the rest went out all at once when skipped.
+
+### Known issues
+- Not yet tried on the MPC: the transposition read-back (needs the LinnStrument on USB), SET, and
+  the paused LISTEN.
 
 ## [0.5.1] - 2026-11-20
 
@@ -157,6 +212,7 @@ First version.
   project.
 - **Library tool.** Fetches public-domain pieces and copies them to the MPC over SSH.
 
+[0.5.5]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.5
 [0.5.1]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.1
 [0.5.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.0
 [0.4.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.4.0

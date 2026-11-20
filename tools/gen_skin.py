@@ -456,6 +456,11 @@ def play_page(th):
     fk, fdefs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118, short=True)
     defs.update(fdefs)
     kids.extend(fk)
+    # SET in the Loop From / Loop To slots (0.5.5): the bar you hear while LISTEN is on, or the
+    # bar the cursor is in
+    son, soff = caption_images(th, 70, 44, "button", "SET")
+    for col, pid in ((2, "loop_set_from"), (3, "loop_set_to")):
+        kids.append(button(pid + "_btn", son, soff, P(pid), 1, 1, COLS_X[col] + SLOT_W - 82, G.FOOTER_Y + 118 + 34, 70, 44))
     rects = list(grid_page.last_rects)
     # the third knob row works the header fields (its rectangle is drawn round them); the fourth
     # has no on-screen controls on this page
@@ -584,26 +589,25 @@ def color_page(th):
 
 def linn_page(th):
     layout = [
-        [("linn", "switch"), ("linn_port", "switch"), ("linn_test", "button"), None],
-        [("linn_guide", "menu"), ("linn_gcol", "menu"), ("linn_finger", "switch"), ("linn_ch", "knob")],
+        [("linn", "switch"), ("linn_port", "switch"), ("linn_fit", "switch"), ("linn_test", "button")],
+        [("linn_guide", "menu"), ("linn_gcol", "menu"), ("linn_gcol2", "menu"), ("linn_finger", "switch")],
         [("linn_sect", "button"), ("linn_scol", "menu"), ("linn_clear", "button"), ("linn_restore", "menu")],
         [("linn_key", "menu"), ("linn_kcol", "menu"), ("linn_sync", "button"), None],
     ]
     kids, defs, qmap = grid_page(th, layout, top=6, row_h=150)
     ls = th.img["linnstate"]
-    x0, y0 = COLS_X[3] + 10, 6
-    kids.append(label("linn_cap", "Text", "Invalid", x0, y0 + 2, SLOT_W - 20, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Status"))
-    kids.append(strip("linnstate", ls[0], ls[1], P("_linnstate"), x0, y0 + 28, R.LINNSTATE_W, R.LINNSTATE_H))
-    kids.append(label("linn_status", "Value", P("text_linn_status"), x0, y0 + 58, SLOT_W - 20, 52, 15, th.dim))
-    y3 = 6 + 3 * 150
-    kids.append(label("key_cap", "Text", "Invalid", x0, y3 + 2, SLOT_W - 20, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "MPC project"))
-    kids.append(label("mpc_key", "Value", P("text_mpc_key"), x0, y3 + 30, SLOT_W - 20, 26, 15, th.text))
+    x0, y3 = COLS_X[3] + 10, 6 + 3 * 150
+    kids.append(label("linn_cap", "Text", "Invalid", x0, y3 + 2, SLOT_W - 20, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Status"))
+    kids.append(strip("linnstate", ls[0], ls[1], P("_linnstate"), x0, y3 + 26, R.LINNSTATE_W, R.LINNSTATE_H))
+    kids.append(label("linn_status", "Value", P("text_linn_status"), x0, y3 + 54, SLOT_W - 20, 40, 14, th.dim))
+    kids.append(label("mpc_key", "Value", P("text_mpc_key"), x0, y3 + 96, SLOT_W - 20, 24, 14, th.text))
     return kids, defs, qmap, grid_page.last_rects
 
 def linn_layout_page(th):
     """LINN's second page (press LINN again): what the plugin needs to know about the instrument."""
     layout = [
         [("linn_size", "switch"), ("linn_rowoff", "menu"), ("linn_low", "knob"), ("linn_left", "switch")],
+        [("linn_ch", "knob"), ("linn_oct", "knob"), ("linn_semi", "knob"), ("linn_follow", "switch")],
     ]
     kids, defs, qmap = grid_page(th, layout, top=6, row_h=150)
     kids.extend(paragraph("help", "These must match the LinnStrument so a light lands on the right cell: its size, its Row "
@@ -611,7 +615,9 @@ def linn_layout_page(th):
                           "Octave and Transpose settings) and Left-Handed. Played-colour highlights also need Linn Ch to be a "
                           "channel the instrument plays on: in MPE mode a per-note channel (2-16), in One Channel mode that channel. "
                           "To use the MIDI jacks instead of USB, set the LinnStrument's MIDI I/O to MIDI Jacks and LINN's Linn Port "
-                          "to MPC Out A or B.", 16, 170, 1248, 17, th.dim, 24))
+                          "to MPC Out A or B. Linn Octave and Linn Transp follow the instrument's Octave and Transpose "
+                          "(Read Transp on: asked every few seconds over USB), so colours and fingering land on the right "
+                          "cells when you transpose it.", 16, 320, 1248, 17, th.dim, 24))
     return kids, defs, qmap, grid_page.last_rects
 
 def stats_page(th):

@@ -22,22 +22,23 @@ Carlos, the pioneer without whom none of this would be possible.*
 
 If anyone finds any of this this super useful and can afford it, send me a tip on PayPal, I'm hilariously unemployed: <img width="500" height="500" alt="paypalqrcode" src="https://github.com/user-attachments/assets/f481d192-200a-4d61-a5a7-09f00cb26175" />
 
-**Status: version 0.5.0.** Earlier versions were tried on an MPC Live III: the pages, the
-notation, the cursor and the practice modes work, and practising a drill on the device "worked
-well". 0.5.0 answers the notes from that test:
-- move around the piece from the header (Bar, Note and BPM fields on the data wheel and
-  Q-Links) and with the MPC's own transport;
-- linked loop controls;
-- whole folders and playlists played in order, with the title as a drop-down;
-- the data wheel's push loads a file;
-- 8va / 8vb lines for notes beyond the staff;
-- a choice of route and a light test for the LinnStrument. Its lights reach it over USB (if they
-  stop, unplug it and plug it back in), but the guide lights are not worked out yet: Next and
-  Next+1 behave oddly in 0.5.0.
+**Status: version 0.5.5.** Sight Reader has been in use on an MPC Live III since 0.1: the pages,
+the notation, the cursor, the practice modes, LISTEN, the piece list and the LinnStrument's lights
+work on the device. 0.5.5 answers the notes from playing 0.5.1:
 
-0.5.0 passes the SDK's validator (0 errors, 0 warnings), its host simulator, and an end-to-end
-test that plays pieces through the plugin's VST interface and checks the screen. It has not yet
-been tried on the MPC.
+- **LISTEN transport**: pause and go on from the same place. The Bar field and the jog wheel move
+  what you hear, and **SET** next to Loop From / Loop To marks the loop at the bar you hear.
+- **Accompaniment**: with one hand practised, the other hand plays to MIDI Out in time. In Wait
+  mode it waits for you whenever your note is due. It is on by default.
+- **LinnStrument**:
+  - **Fit Range** folds notes the surface cannot play into its range.
+  - The guide always shows the next note to press, and has its own colour for the note after.
+  - It follows the instrument's Octave and Transpose, read from the instrument.
+- **The jog wheel steps evenly**: one step per click on every number (Tempo 100, 101, 102...).
+
+0.5.5 passes the SDK's validator (0 errors, 0 warnings), its host simulator, and an end-to-end
+test that plays pieces through the plugin's VST interface and checks the screen. Its new features
+have not yet been tried on the MPC.
 
 ## What you can use it with
 
@@ -68,18 +69,20 @@ Accomp send MIDI to an instrument track of your choice instead.
 
 Switch **Linn Mode** on (LINN page) and the instrument lights:
 
-- the next notes to play (in its own Played colour or any colour), and the step after;
+- the next notes to press (in its own Played colour or any colour), and the step after in a
+  colour of its own; a note you press goes dark and the next one lights;
 - a suggested cell and finger for each note (a hand-position planner for the fourths grid);
 - every note of the loop or of the bars on screen (LIGHT BARS);
 - the MPC project's key or pad scale (Key Lights);
 - each note as it sounds while LISTEN plays.
 
-Your note-light settings are never changed, and cells it lit go back to your note colours. On the
-staff, every note can carry a dot of its LinnStrument colour (COLOR page), so the screen speaks
-the instrument's colour language.
+Notes the surface cannot play are folded by octaves onto it (**Fit Range**), and the lights follow
+the instrument's own Octave and Transpose (read from it over USB). Your note-light settings are
+never changed: with a custom light pattern, **Restore = Pattern n** puts it back exactly after
+any coloured lights. On the staff, every note can carry a dot of its LinnStrument colour (COLOR
+page), so the screen speaks the instrument's colour language.
 
-**Work in progress:** the lights reach the instrument, but in 0.5.0 the guide lights (Next and
-Next+1) still behave oddly and are being debugged. **If the lights do nothing:** unplug the
+**If the lights do nothing:** unplug the
 LinnStrument and plug it back in, then press TEST LIGHTS (LINN page). On the author's MPC Live III the LinnStrument once stopped taking anything the MPC
 sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a second route. See
 [docs/linnstrument.md](docs/linnstrument.md).
@@ -95,7 +98,8 @@ sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a s
 | **Pieces in order** | Load one file and its folder becomes the piece list: tap the title on PLAY to pick another with the data wheel, see *(3/12)* after the title, and let **Auto Next** load the next piece when one ends. Build a **Playlist** of any files, in your order, on the LOAD page. |
 | **Slack** | Timing window (40-400 ms), pitch tolerance (exact, any octave, a semitone either way), chord tolerance (all notes, all but one, any one), how long Flow waits, whether wrong notes are ignored, counted or stop the clock. |
 | **Focus** | Right hand, left hand or both; a note range (outside it notes are not asked for, or removed from the score); loop any span of bars (Loop From, Loop To and Loop Bars follow each other), with an optional tempo ramp after each pass at or above your goal; masks that hide notes once played, or hide the bar you are in so you have to read ahead. |
-| **Listen** | LISTEN (on PLAY) plays the piece, or the loop, in time as MIDI through the port "Sight Reader MIDI Out", so any instrument track (a plugin, a keygroup, a drum program) set to that input plays it as an example. Speed: the Tempo knob, or a fixed 25-150 %. The cursor follows the music, and in Linn Mode the LinnStrument lights the notes as they sound. Your practice position stays where it was. |
+| **Listen** | LISTEN (on PLAY) plays the piece, or the loop, in time as MIDI through the port "Sight Reader MIDI Out", so any instrument track (a plugin, a keygroup, a drum program) set to that input plays it as an example. Press it again to pause and once more to go on; while it is on, the Bar and Note fields (and the jog wheel) move what you hear, and **SET** next to Loop From / Loop To marks the loop at the bar you hear. Speed: the Tempo knob, or a fixed 25-150 %. The cursor follows the music, and in Linn Mode the LinnStrument lights the notes as they sound. Your practice position stays where it was. |
+| **Accompaniment** | Practising one hand, the other hand plays to "Sight Reader MIDI Out" in time (Accomp, MORE, on by default); in Wait mode it waits for you whenever your next note is due. |
 | **Feedback** | A band marks the current note; notes you play turn green, missed notes red, and a wrong note appears as a red note where you played it (with its accidental). A red flash can cover the staff on a mistake. The header shows the next note of each hand and the note you played, and says what is wrong when you seem stuck (the other hand's note still wanted, or an instrument an octave off). A quiet error sound (six timbres, volume, pitch and an ADSR envelope) sounds on a mistake and again softer on every Nth note afterwards, so you notice during a fast run. Accuracy, misses, bar and tempo are on screen. |
 | **Note colours** | A dot of each note's colour in every notehead still to be played, set per note on the COLOR page. The default is a LinnStrument scheme: C cyan, D blue, E pink, F magenta, G white, A yellow, B orange, with in-between hues for the black keys (D# navy, F# a light salmon pink...). |
 | **Readouts** | Under every setting, a line that says what its current choice does ("Count: a wrong note lowers accuracy; the music goes on"); values carry their units (160 ms, 30%, Ch 1). |
@@ -110,7 +114,7 @@ sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a s
 You need MPC OS 3.10.1 or later with **Preferences → Enhancements (Beta) → Enable Enhancements**
 and **External Plugin Support** switched on.
 
-1. Download `sight-reader-0.5.1-mpc.zip` from the
+1. Download `sight-reader-0.5.5-mpc.zip` from the
    [releases](https://github.com/uncertainblume/mpc-sightreading/releases) (the same file is in
    [dist/](dist/)) and unzip it, or build it yourself (below).
 2. Copy the folder `Practice Tools - VST - Sight Reader` into `VST2 Plugins` at the top of the
@@ -119,7 +123,7 @@ and **External Plugin Support** switched on.
    first):
 
    ```bash
-   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.1-mpc.zip
+   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.5-mpc.zip
    ```
 3. Restart the MPC app. Sight Reader is under **External Plugins**. Projects that already use it
    keep their settings.
@@ -185,7 +189,7 @@ tools/run_tests.sh
 
 The first build fetches Akai's SDK (pinned commit) and, through it, the Zig cross compiler. The
 output folder is `plugin/build/Practice Tools - VST - Sight Reader/`. Releases are built by the
-[release workflow](.github/workflows/release.yml) from tags like `v0.5.0`.
+[release workflow](.github/workflows/release.yml) from tags like `v0.5.5`.
 
 ## Read more
 

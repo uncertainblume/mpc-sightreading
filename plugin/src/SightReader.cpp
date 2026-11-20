@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 506;   // 0.5.6
+constexpr int kVersion = 600;   // 0.6.0
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -555,6 +555,7 @@ public:
                 if (listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
                 Loaded* old = current_;
                 current_ = in;
+                plusOne_.reset();
                 engine_.setScore(&current_->score, current_->stepState.data(), current_->noteState.data(), current_->stepWrong.data());
                 {
                     const Score& sc = current_->score;
@@ -585,6 +586,7 @@ public:
         {
             if (listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
             engine_.restart(); accompAllOff(); resetParam(gen::P_RESTART); setParamFromEngine(gen::P_PLAY, 0.0f);
+            plusOne_.reset();
         }
         if (listenStopReq_.exchange(false) && listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }
         {   // LISTEN is play/pause (0.5.5): off while it plays pauses it where it is, on again goes on
@@ -652,6 +654,7 @@ public:
                 if (isEcho(e.note())) continue;
                 notes[nn++] = {e.sampleOffset, (uint8_t)e.note(), true};
                 lastPlayed_ = e.note();
+                plusOne_.touch(e.note());
             }
             else if (e.isNoteOff()) released_[e.note() & 127] = true;
             else if (e.isAllNotesOff()) accompAllOff();
@@ -1316,6 +1319,7 @@ private:
         int8_t wantCol[16], wantRow[16];
         if (guideMode > 0 && current_ && listening_)
         {   // LISTEN: light the notes as they sound
+            plusOne_.reset();
             listen_.forEachSounding([&](const PlayNote& pn, int32_t ni) {
                 if (wantCount >= 16) return;
                 want[wantCount] = pn.pitch;
@@ -1328,36 +1332,23 @@ private:
         }
         else if (guideMode > 0 && current_ && engine_.state() != RunState::Done)
         {
-            // the next notes still to press (0.5.5): a step whose notes you have all played, ahead
-            // of the clock in Rhythm or Flow, is passed over, so the guide always shows what to
-            // press next
-            auto allPlayed = [this](int st) {
-                bool open = false;
-                engine_.forEachRequired(st, [&open](const PlayNote&, uint8_t state) { if (state != 1) open = true; });
-                return !open;
-            };
-            int s = engine_.nextRequiredStep(std::max(0, engine_.currentStep()));
-            while (s >= 0 && allPlayed(s)) s = engine_.nextRequiredStep(s + 1);
-            for (int pass = 0; pass < (guideMode == 2 ? 2 : 1) && s >= 0; ++pass)
-            {
-                engine_.forEachRequired(s, [&](const PlayNote& pn, uint8_t state) {
-                    if (state == 1 || wantCount >= 16) return;
-                    size_t ni = (size_t)(&pn - &current_->score.notes[0]);
-                    want[wantCount] = pn.pitch;
-                    wantCol[wantCount] = ni < current_->fing.col.size() ? current_->fing.col[ni] : -1;
-                    wantRow[wantCount] = ni < current_->fing.row.size() ? current_->fing.row[ni] : -1;
-                    int f = ni < current_->fing.finger.size() ? current_->fing.finger[ni] : 0;
-                    // the next step in Guide Clr, the one after in After Clr (0.5.5). Played (0) is the
-                    // instrument's own highlight, kept apart from your light pattern; a colour
-                    // paints the cells
-                    const int c = pass == 0 ? gcol : gcol2;
-                    wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f] : (c == 0 ? 0 : kLinnColourChoice[c - 1]);
-                    ++wantCount;
-                });
-                s = engine_.nextRequiredStep(s + 1);
-                while (s >= 0 && allPlayed(s)) s = engine_.nextRequiredStep(s + 1);
-            }
+            // the next notes still to press, and the step after (sr/linn.h guideNotes)
+            guideNotes(engine_, guideMode == 2 ? 2 : 1, plusOne_, [&](int pass, const PlayNote& pn) {
+                if (wantCount >= 16) return;
+                size_t ni = (size_t)(&pn - &current_->score.notes[0]);
+                want[wantCount] = pn.pitch;
+                wantCol[wantCount] = ni < current_->fing.col.size() ? current_->fing.col[ni] : -1;
+                wantRow[wantCount] = ni < current_->fing.row.size() ? current_->fing.row[ni] : -1;
+                int f = ni < current_->fing.finger.size() ? current_->fing.finger[ni] : 0;
+                // the next step in Guide Clr, the one after in After Clr (0.5.5). Played (0) is the
+                // instrument's own highlight, kept apart from your light pattern; a colour
+                // paints the cells
+                const int c = pass == 0 ? gcol : gcol2;
+                wantColour[wantCount] = (fingering && f > 0) ? kFingerColour[f] : (c == 0 ? 0 : kLinnColourChoice[c - 1]);
+                ++wantCount;
+            });
         }
+        else plusOne_.reset();
         // A highlighted note you have just released: the instrument cleared the cell under your
         // finger, so it is lit again if it is still (or again) the note to press.
         bool relight = false;
@@ -1730,6 +1721,11 @@ private:
         auto lastLinnScan = std::chrono::steady_clock::now() - std::chrono::seconds(10);
         auto lastLinnAsk = lastLinnScan;
         long lastKeyMTime = -1;
+        // 0.6.0: the MIDI loader on a computer touches Library/.rescan after it changes the
+        // library; a look at that one file every 2 s is all this costs
+        const std::string libMarkPath = places_.home + "/Library/.rescan";
+        FileStamp libMark = fileStamp(libMarkPath);
+        auto lastLibCheck = std::chrono::steady_clock::now();
         while (true)
         {
             {
@@ -1739,7 +1735,7 @@ private:
             }
             // retire the previous piece
             if (Loaded* old = retired_.exchange(nullptr)) delete old;
-            if (trig_rescan_.exchange(false)) { rescan(); refreshList(); resetTrigger(gen::P_RESCAN); }
+            if (trig_rescan_.exchange(false)) { rescanKeepingPlace(false); resetTrigger(gen::P_RESCAN); }
             if (listDirty_.exchange(false)) refreshList();
             if (trig_restore_.exchange(false))
             {
@@ -1821,6 +1817,12 @@ private:
             // LinnStrument: look for it every few seconds while Linn Mode is on (and at once when
             // the port changes or TEST LIGHTS is pressed)
             auto now = std::chrono::steady_clock::now();
+            if (now - lastLibCheck >= std::chrono::seconds(2))
+            {
+                lastLibCheck = now;
+                FileStamp m = fileStamp(libMarkPath);
+                if (m != libMark) { libMark = m; rescanKeepingPlace(true); }
+            }
             bool scanNow = trig_linnscan_.exchange(false);
             if ((getBool(gen::P_LINN) || scanNow) && (scanNow || now - lastLinnScan > std::chrono::seconds(3)))
             {
@@ -1885,6 +1887,47 @@ private:
         std::lock_guard<std::mutex> lk(libMx_);
         folders_.swap(f);
         appendPlaylistFolder();
+    }
+
+    // RESCAN, and the library changing under us (0.6.0): read the folders again, then show the
+    // same folder and file as before, wherever they are in the new list.
+    void rescanKeepingPlace(bool byLoader)
+    {
+        std::string folderName;
+        int oldFi = -1;
+        {
+            std::lock_guard<std::mutex> lk(libMx_);
+            int nf = (int)folders_.size();
+            if (nf > 0) { oldFi = std::max(0, std::min(nf - 1, (int)get(gen::P_FOLDER))); folderName = folders_[(size_t)oldFi].name; }
+        }
+        const std::string path = selectedPath();
+        rescan();
+        int fi = -1, sel = -1, pieces = 0;
+        {
+            std::lock_guard<std::mutex> lk(libMx_);
+            const std::string lib = places_.home + "/Library/";
+            for (size_t i = 0; i < folders_.size(); ++i)
+            {
+                const LibFolder& fo = folders_[i];
+                if (fo.dir.compare(0, lib.size(), lib) == 0) pieces += (int)fo.entries.size();
+                if (fi < 0 && !folderName.empty() && fo.name == folderName) fi = (int)i;
+            }
+            if (fi >= 0 && !path.empty())
+            {
+                std::vector<const LibEntry*> v = sortedEntries(folders_[(size_t)fi]);
+                for (size_t k = 0; k < v.size(); ++k) if (v[k]->path == path) { sel = (int)k; break; }
+            }
+        }
+        {
+            std::unique_lock<std::mutex> stateLock(stateMx_);   // never in the middle of a project loading
+            if (!loadingState_.load())
+            {
+                if (fi >= 0 && fi != oldFi) setTracked(gen::P_FOLDER, (float)fi);
+                if (sel >= 0) { setTracked(gen::P_SELECT, (float)sel); listSrc_.store(2); }
+            }
+        }
+        refreshList();
+        if (byLoader) setText(gen::T_MESSAGE, "Library updated from your computer: " + std::to_string(pieces) + " pieces");
     }
 
     // ---- the playlist (0.5.0): files in your order, kept in SightReader/playlist.txt -----------
@@ -1999,7 +2042,7 @@ private:
         if (nf == 0)
         {
             setText(gen::T_FOLDER_NAME, "(no library)");
-            for (int r = 0; r < 8; ++r) setText(gen::T_ROW0 + r, r == 0 ? "No MIDI files found." : (r == 1 ? ("Put .mid files in " + places_.home + "/Library/<folder>") : (r == 2 ? "or run tools/library.py sync from a computer." : "")));
+            for (int r = 0; r < 8; ++r) setText(gen::T_ROW0 + r, r == 0 ? "No MIDI files found." : (r == 1 ? ("Put .mid files in " + places_.home + "/Library/<folder>") : (r == 2 ? "or add some with the MIDI loader on your computer." : "")));
             setText(gen::T_INFO0, "GEN makes exercises without any files.");
             return;
         }
@@ -2401,6 +2444,7 @@ private:
     int healCount_ = 0;
     struct OffHeal { int pitch = -1; int left = 0; };
     OffHeal offHeal_[16];
+    PlusOneTouches plusOne_;                       // audio thread: lights of the step after next you touched
     int testCh_ = 0;
     double lastPpq_ = -1;
     uint32_t baseSig_ = 0;

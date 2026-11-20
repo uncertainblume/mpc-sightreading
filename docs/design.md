@@ -217,12 +217,53 @@ Transpose, which the plugin cannot see.
   This keeps the audio thread's output handle unshared and does not depend on what the MPC
   routes to the track.
 
+## 0.6.0: the MIDI loader runs on the computer
+
+The user wanted an easier way to load MIDI files than the command line, without making the
+plugin bigger or busier. A web page served from the plugin would have needed:
+- a listening socket and a thread in every instance;
+- an upload parser;
+- a way to keep strangers on the network out.
+
+All of that would run on the MPC's CPU. So the page lives on the computer instead:
+`loader/mpc-sightreading-midi-loader.py` is one standard-library Python file. It serves the page
+on 127.0.0.1 only, and every API call carries a random key given to the page it served. It also
+checks the Host and Origin headers, so another site open in the browser cannot reach it, even by
+DNS rebinding.
+
+It talks to the MPC with the computer's own `ssh`, as the SDK's `mpc_remote.py` does: the same
+options, no known_hosts (the MPC changes its host key), and a ControlMaster connection reused
+between commands.
+
+Each operation is one or two SSH commands in plain POSIX `sh`. The tests run them under busybox
+alone, with and without `md5sum`:
+- **Look**: one command lists the drives with a `VST2 Plugins` or `SightReader` folder, where
+  Sight Reader is installed and its version, and the library on those drives. It gives sizes
+  (`wc -c`), checksums (`md5sum`, when there is one) and the `index.tsv` files.
+- **Plan** (on the computer): the local library against that listing, and a manifest of what this
+  computer put on that MPC.
+  - The manifest is `synced.json`, keyed by a hash of `/etc/machine-id` and the library path.
+  - Pieces missing or different there are copied.
+  - Pieces in the manifest that are gone here are removed.
+  - Everything else there is left alone and listed as only on the MPC.
+  - Each collection's `index.tsv` is rebuilt from the computer's titles, plus the rows of the
+    pieces that stay there.
+- **Sync**: one tar archive in, owned by root. Then `rm` for the removals, `rmdir` for emptied
+  collections, and last `.rescan` written through a temporary file and `mv`.
+
+The plugin's side is the only new code on the MPC. The worker thread, which already wakes every
+250 ms, calls `stat()` on `SightReader/Library/.rescan` every 2 s and compares inode, size and
+nanosecond mtime. The `mv` gives a new inode each time, so a change is seen whatever the
+filesystem's time resolution. Then it rescans as RESCAN does, finds the folder and file it was
+showing by name and path, and puts the selection back on them.
+
 ## Files on the MPC
 
 All inside `<drive>/SightReader/` next to `VST2 Plugins/` (the plugin finds its own folder with
-the SDK's `mpc::pluginFolder()`): `Library/<folder>/*.mid` (+ `index.tsv`), `Generated/`,
-`progress.tsv`, `days.txt`, `playlist.txt` (0.5.0). Built-in drills are in the plugin folder's `Content/Drills/`. Nothing
-else is written; no system file is touched.
+the SDK's `mpc::pluginFolder()`): `Library/<folder>/*.mid` (+ `index.tsv`), `Library/.rescan`
+(0.6.0, written by the loader and `tools/library.py push`), `Generated/`, `progress.tsv`,
+`days.txt`, `playlist.txt` (0.5.0). Built-in drills are in the plugin folder's `Content/Drills/`.
+Nothing else is written; no system file is touched.
 
 ## Sources
 

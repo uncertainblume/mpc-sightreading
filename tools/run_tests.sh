@@ -1,7 +1,7 @@
 #!/bin/sh
 # Desktop tests: core unit tests (with sanitizers), then the built plugin driven through its
-# VST2 interface with a small library, then Akai's host simulator. Needs a C++17 compiler;
-# the last two need tools/build.sh to have run (the native build).
+# VST2 interface with a small library, then Akai's host simulator, then the MIDI loader. Needs a
+# C++17 compiler; the plugin-level tests need tools/build.sh to have run (the native build).
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SDK="$ROOT/third_party/mpc-plugin-builder-sdk"
@@ -22,4 +22,12 @@ if [ -f "$NATIVE" ] && [ -d "$SDK/framework" ]; then
     rm -rf "$HOME_DIR"
 else
     echo "(run tools/build.sh first for the plugin-level tests)"
+fi
+# The MIDI loader (Python): against a pretend MPC, under sh and (when installed) busybox
+if python3 "$ROOT/tests/loader_test.py" >"$OUT/loader_test.log" 2>&1; then tail -3 "$OUT/loader_test.log"; else cat "$OUT/loader_test.log"; exit 1; fi
+# ... and its page in a browser, where node and Playwright are installed
+if command -v node >/dev/null 2>&1 && node -e "require('playwright')" >/dev/null 2>&1; then
+    if node "$ROOT/tests/loader_browser_test.js" >"$OUT/loader_browser.log" 2>&1; then tail -1 "$OUT/loader_browser.log"; else cat "$OUT/loader_browser.log"; exit 1; fi
+else
+    echo "(node with playwright not found: the loader's browser test is skipped)"
 fi

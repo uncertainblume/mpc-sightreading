@@ -5,6 +5,41 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 
 ## Start here (next session)
 
+**0.6.0 (2026-11-20)** is the easier way to load MIDI files that the user asked for. They wanted
+nothing extra running on the MPC, so the loader is on the computer:
+- `loader/mpc-sightreading-midi-loader.py`: one standard-library Python file, plus a `.command`
+  launcher for Finder. It serves a page on 127.0.0.1 (a key per run; Host and Origin checked) and
+  works over the computer's `ssh` (see design.md).
+- The page has a library of collections (drop, title, level, delete to the Trash), Sync (a
+  mirror, but it only removes what this computer put there), pieces only on the MPC (copy back
+  or delete), and Restart the MPC app.
+- The MPC address has no default and is remembered in the user's settings folder. The user asked
+  for that so their LAN setup is not in the repository. The repository's documents now say
+  `<mpc-ip>`. The address is still in older commits.
+- The plugin's only part: the worker thread looks at `SightReader/Library/.rescan` every 2 s and
+  rescans when it changes, keeping the LOAD selection. `tools/library.py push` touches it too.
+
+Also in 0.6.0, from the user: **a +1 light goes off when touched**, like a next light. It stays
+dark while its step is the one after, and lights in the next colour when the step comes up (Wait
+mode still needs the note). The code is `PlusOneTouches` and `guideNotes` in `sr/linn.h`, shared
+with the unit test.
+
+The user also asked about other colours (PWM). The palette is fixed in the firmware: 10 colours
+and off. The firmware's own time-multiplexing makes orange, lime, pink and white, and MIDI cannot
+reach it. Blinking from the plugin would flood the instrument. The answer (linnstrument.md): use
+neighbouring colours for Next and After, e.g. green and lime, or blue and cyan. A slow blink of
+the step-after cells (about 2 paints a second per cell) was offered as an option, not built.
+
+Ask the user to try, in this order:
+1. The loader: Settings, a drop, Sync, the LOAD list updating by itself.
+2. Restart from the page.
+3. The +1 touch behaviour.
+4. The 0.5.5/0.5.6 list below.
+
+Not tried on a real MPC, which matters most for `md5sum` and the drive search
+(`/nvme /media/* /run/media/*/* /mnt/*`). If the loader says Sight Reader is not installed,
+ask for `ls -d /*/VST2*` and `ls /media` output.
+
 **0.5.6 (2026-11-20)** fixed the Next+1 lights lagging. The user's report: next notes red, the
 step after green; after playing a red note the green ones sometimes stayed green. Diagnosis from
 the firmware: MIDI is read one byte per main-loop pass into a small buffer, so bursts are lost
@@ -38,14 +73,10 @@ All tested on a computer, none on the MPC yet. Ask the user to try, in this orde
 5. Transposing the LinnStrument with a colour guide (the LINN status line should say "Read:
    Octave ...").
 
-**Next, 0.6.0** (the user's plan): an easier way to load new MIDI files than the command line.
-Discuss strategies with the user before building. Ideas to bring:
-- a small web page served from the MPC (or from the plugin);
-- a watched "Inbox" folder on a USB stick, copied in by RESCAN;
-- pulling from a shared Google Drive or Dropbox link;
-- mpcremote integration.
-
-The user said 0.6.0 comes after 0.5.5 is tried.
+**After 0.6.0, ideas the user mentioned:**
+- a shared folder in the cloud or on their NAS as a source for the loader (future);
+- the bespoke simplified Rhapsody in Blue MIDI (for their own use);
+- links to MIDI sites that block automated fetching (kunstderfuge, midishow, MuseScore).
 
 **Where things were (end of 2026-11-19).**
 
@@ -173,7 +204,9 @@ Candidates to check against what they describe (from reading `lightsBlock()` in
    0.6.0) and `plugin/README.md`.
 2. Run `tools/build.sh` and `tools/run_tests.sh`. Package with the SDK's `tools/package.py`
    (see Build in the README) and move the zip to `dist/sight-reader-X.Y.Z-mpc.zip`, removing the
-   previous zip from `dist/`.
+   previous zip from `dist/`. Zip the loader as `dist/mpc-sightreading-midi-loader-X.Y.Z.zip`
+   (the folder `mpc-sightreading-midi-loader/` with the .py, the .command and README.md); the
+   workflow attaches it when it is there. Bump `VERSION` in the loader with the plugin.
 3. Add `## [X.Y.Z] - date` and its link line to `CHANGELOG.md`.
 4. Merge into `main` through a PR, only with the user's go.
 5. `.github/workflows/release.yml` then publishes the release by itself.
@@ -186,8 +219,8 @@ From the cloud session, tags cannot be pushed (403), and the workflow cannot be 
 - Work on the branch.
 - Merge to `main` only for an approved version.
 - Never run `mpc_remote.py` add/update/remove/restart yourself. Give the user the command; they
-  update the MPC themselves. The MPC is at 192.168.1.20 on their network, which the cloud session
-  cannot reach.
+  update the MPC themselves. The cloud session cannot reach the MPC on their network. Write commands
+  with `<mpc-ip>` (or the address they gave in the conversation); do not put it in the repository.
 - Do not use The Session's tune database (its licence forbids processing with LLM tools).
 - Keep the user's email out of everything.
 - Commits end with the Co-Authored-By / Claude-Session lines the harness gives.
@@ -298,7 +331,7 @@ data-wheel steps on the new fields, the DIN route).
 Save your project first; plugins run without crash protection. Update with:
 
 ```bash
-python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py 192.168.1.20 --drive 1 update dist/sight-reader-0.5.6-mpc.zip
+python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.6.0-mpc.zip
 ```
 
 It asks before restarting the MPC app. If Sight Reader is already on a track, the project keeps

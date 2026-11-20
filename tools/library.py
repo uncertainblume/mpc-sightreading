@@ -7,16 +7,19 @@
     python3 tools/library.py add FILES... --collection "My Songs" [--title T] [--level N]
                                                         copy your own .mid files into the cache
     python3 tools/library.py list                       what is in the cache
-    python3 tools/library.py push 192.168.1.20 [--drive /nvme] [--dry-run]
+    python3 tools/library.py push <mpc-ip> [--drive /nvme] [--dry-run]
                                                         copy the cache to <drive>/SightReader/Library over SSH
-    python3 tools/library.py sync 192.168.1.20          fetch, then push
+    python3 tools/library.py sync <mpc-ip>              fetch, then push
     python3 tools/library.py device-script > get.sh     a shell script that downloads the catalogue on the
                                                         MPC itself:  ssh root@<mpc> sh -s < get.sh
 
 Needs Python 3.8+ and the ssh command. The MPC must be in developer mode (Preferences ->
 Developer: SSH server on; you log in as root with no password). Nothing is installed or changed
-on the MPC except the SightReader/Library folder on the drive. Press RESCAN on the plugin's LOAD
-page afterwards (or reload the plugin).
+on the MPC except the SightReader/Library folder on the drive. Sight Reader 0.6.0 and later see
+the change and rescan by themselves (older versions: press RESCAN on the plugin's LOAD page).
+
+For adding your own files there is also a page you can use instead of these commands:
+loader/mpc-sightreading-midi-loader.py (see the README).
 
 Each collection folder gets an index.tsv (file, title, composer, level, source) that the
 plugin shows in its list. Music from Mutopia is public domain or Creative Commons; the licence
@@ -200,18 +203,25 @@ def cmd_push(args):
     colls = collections()
     if not colls:
         sys.exit("the cache is empty: run 'fetch' or 'add' first")
+    def as_root(ti):                                  # owned by the MPC's root, readable by all
+        ti.uid = ti.gid = 0
+        ti.uname = ti.gname = "root"
+        ti.mode = 0o755 if ti.isdir() else 0o644
+        return ti
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tar:
         for c in colls:
-            tar.add(os.path.join(CACHE, c), arcname=c)
+            tar.add(os.path.join(CACHE, c), arcname=c, filter=as_root)
     lib = args.drive.rstrip("/") + "/SightReader/Library"
     probe = ssh(args.host, "test -d %s && echo ok" % shlex.quote(args.drive), dry=args.dry_run)
     if not args.dry_run and b"ok" not in probe:
         sys.exit("%s is not a folder on the MPC (use --drive; the internal drive is /nvme on a Live III)" % args.drive)
-    ssh(args.host, "mkdir -p %s && tar -xf - -C %s && ls %s" % (shlex.quote(lib), shlex.quote(lib), shlex.quote(lib)), buf.getvalue(), args.dry_run)
+    # .rescan last: Sight Reader 0.6.0 and later see it change and rescan by themselves
+    mark = "printf '%%s\\n' %s > .rescan.tmp && mv -f .rescan.tmp .rescan" % shlex.quote("%d library.py" % time.time_ns())
+    ssh(args.host, "mkdir -p %s && cd %s && tar -xf - && %s && ls" % (shlex.quote(lib), shlex.quote(lib), mark), buf.getvalue(), args.dry_run)
     total = sum(len(read_index(os.path.join(CACHE, c))) for c in colls)
     print("copied %d collection(s), %d file(s) to %s:%s" % (len(colls), total, args.host, lib))
-    print("On the MPC: open Sight Reader's LOAD page and press RESCAN.")
+    print("Sight Reader 0.6.0 or later shows them within a few seconds (older versions: press RESCAN on the LOAD page).")
 
 def cmd_sync(args):
     cmd_fetch(args)

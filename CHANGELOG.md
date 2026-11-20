@@ -1,9 +1,46 @@
 # Changelog
 
 Each version's zip is attached to its [GitHub release](https://github.com/uncertainblume/mpc-sightreading/releases)
-(tags `v0.1.0` ... `v0.5.6`). Install or update by copying the folder in the zip to `VST2 Plugins`
+(tags `v0.1.0` ... `v0.6.0`). Install or update by copying the folder in the zip to `VST2 Plugins`
 on the MPC's internal drive; projects keep their settings, and new settings start at their
 defaults.
+
+## [0.6.0] - 2026-11-20
+
+Your own MIDI files on the MPC from a page in your browser, and the step-after light goes off
+when you touch it.
+
+### Added
+- **mpc-sightreading-midi-loader** (`loader/`, and `mpc-sightreading-midi-loader-0.6.0.zip` on
+  the release). A page in your browser, served by a small Python program on your computer:
+  - Drop `.mid` files into collections, and give them titles, composers and levels.
+  - **Sync** makes the MPC's library match the computer's: new and changed pieces are copied, and
+    pieces you removed are removed there.
+  - **Restart the MPC app** (`systemctl restart acvs`, as `mpc_remote.py restart` does).
+
+  All the work happens on the computer. The MPC runs nothing new: a sync is one SSH login and one
+  archive. The page can only be opened from the computer it runs on (127.0.0.1, with a key for
+  each run). Details:
+  - The MPC's address has no default. You enter it once, and it is remembered in your user
+    settings folder, never in the repository.
+  - A piece is removed from the MPC only if this computer put it there. Pieces that got there
+    another way are listed as only on the MPC: copy them to the computer, or delete them.
+  - Files copied earlier with `tools/library.py push` are recognised, so they are not copied
+    again.
+  - On a Mac, double-click `mpc-sightreading-midi-loader.command`. Needs Python 3.8+ and `ssh`;
+    nothing to install. See [loader/README.md](loader/README.md).
+- **The library rescans by itself.** After a sync, the loader (and `tools/library.py push`) touch
+  `SightReader/Library/.rescan`. Sight Reader looks at that one file every 2 seconds and rescans
+  when it changes. The LOAD list keeps the folder and file you had selected, and the message line
+  says "Library updated from your computer". It runs no server and does no network work on the
+  MPC. RESCAN keeps your place now too.
+
+### Changed
+- **The step-after light goes off when you touch it** (Guide = Next+1), as a next-note light
+  does. In Wait mode a note you play early does not count yet, so when its step becomes the next
+  one it lights again, in the next-note colour.
+- `tools/library.py push` copies files as the MPC's root user, and tells Sight Reader to rescan.
+- The repository's documents use `<mpc-ip>` instead of an example address.
 
 ## [0.5.6] - 2026-11-20
 
@@ -239,6 +276,7 @@ First version.
   project.
 - **Library tool.** Fetches public-domain pieces and copies them to the MPC over SSH.
 
+[0.6.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.6.0
 [0.5.6]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.6
 [0.5.5]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.5
 [0.5.1]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.1

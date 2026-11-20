@@ -1,5 +1,6 @@
 # Publishes a GitHub release for every version in CHANGELOG.md that has none yet: tag vX.Y.Z on
-# the last commit that built dist/sight-reader-X.Y.Z-mpc.zip, the zip attached, and that
+# the last commit that built dist/sight-reader-X.Y.Z-mpc.zip, the zip attached (and the MIDI
+# loader's dist/mpc-sightreading-midi-loader-X.Y.Z.zip when that commit has one), and that
 # version's CHANGELOG section as the notes. The highest version is marked Latest. Releases that
 # exist already get their notes refreshed from CHANGELOG.md, so corrections there reach them.
 #
@@ -73,8 +74,14 @@ jobs:
             fi
             if [ -z "$REF" ] || ! git cat-file -e "$REF:$ZIP" 2>/dev/null; then echo "$TAG: no $ZIP in history, skipped"; continue; fi
             git show "$REF:$ZIP" > "sight-reader-$VER-mpc.zip"
+            set -- "sight-reader-$VER-mpc.zip"
+            LOADER="dist/mpc-sightreading-midi-loader-$VER.zip"
+            if git cat-file -e "$REF:$LOADER" 2>/dev/null; then
+              git show "$REF:$LOADER" > "mpc-sightreading-midi-loader-$VER.zip"
+              set -- "$@" "mpc-sightreading-midi-loader-$VER.zip"
+            fi
             LATEST=false; [ "$VER" = "$HIGHEST" ] && LATEST=true
-            echo "$TAG: releasing $REF (latest: $LATEST)"
-            gh release create "$TAG" "sight-reader-$VER-mpc.zip" --target "$REF" \
+            echo "$TAG: releasing $REF (latest: $LATEST): $*"
+            gh release create "$TAG" "$@" --target "$REF" \
               --title "Sight Reader $VER" --notes-file notes.md --latest="$LATEST"
           done

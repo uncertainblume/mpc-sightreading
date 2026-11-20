@@ -651,6 +651,38 @@ int main(int argc, char** argv)
         p.block({{0x90, 89, 100}}); p.run(0.05);
         CHECK(p.frame(gen::kD_nextname, gen::kNoteNameFrames) == noteNameFrame(91));
     }
+    // ---- 0.6.0: the MIDI loader changes the library; the plugin rescans by itself ---------------
+    {
+        CHECK(openFolder(p, "Queue"));
+        p.e->setParameter(p.e, gen::P_PICK1, 1.0f); p.waitWorker(0.3);
+        CHECK(plainOf(p, gen::P_SELECT) == 1);                                   // b_second
+        const int queueAt = plainOf(p, gen::P_FOLDER);
+        // a new folder ahead of Queue and a new file ahead of b_second, then the marker
+        writeMid(std::string(argv[2]) + "/Library/Aardvark", "new_piece", drill, {});
+        writeMid(std::string(argv[2]) + "/Library/Queue", "a_zero", drill, {});
+        FILE* mk = std::fopen((std::string(argv[2]) + "/Library/.rescan").c_str(), "wb");
+        CHECK(mk != nullptr);
+        if (mk) { std::fputs("1 test\n", mk); std::fclose(mk); }
+        p.waitWorker(2.8);
+        std::printf("after the loader: folder '%s' (was at %d, now %d), select %d, message '%s'\n",
+                    p.text(gen::kTextBase + gen::T_FOLDER_NAME).c_str(), queueAt, plainOf(p, gen::P_FOLDER),
+                    plainOf(p, gen::P_SELECT), p.text(gen::kTextBase + gen::T_MESSAGE).c_str());
+        CHECK(p.text(gen::kTextBase + gen::T_FOLDER_NAME).find("Queue") != std::string::npos);
+        CHECK(plainOf(p, gen::P_FOLDER) == queueAt + 1);                          // Aardvark came in ahead
+        CHECK(plainOf(p, gen::P_SELECT) == 2);                                    // still b_second
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("Library updated from your computer") != std::string::npos);
+        CHECK(p.text(gen::kTextBase + gen::T_ROW1).find("a zero") != std::string::npos);
+        // without the marker the plugin does not look: a new file stays unseen ...
+        writeMid(std::string(argv[2]) + "/Library/Queue", "a_aa", drill, {});
+        p.waitWorker(2.6);
+        CHECK(p.text(gen::kTextBase + gen::T_ROW0).find("a first") != std::string::npos);
+        CHECK(plainOf(p, gen::P_SELECT) == 2);
+        // ... until RESCAN, which keeps the place too
+        p.e->setParameter(p.e, gen::P_RESCAN, 1.0f); p.waitWorker(0.6);
+        std::printf("after RESCAN: row0 '%s', select %d\n", p.text(gen::kTextBase + gen::T_ROW0).c_str(), plainOf(p, gen::P_SELECT));
+        CHECK(p.text(gen::kTextBase + gen::T_ROW0).find("a aa") != std::string::npos);
+        CHECK(plainOf(p, gen::P_SELECT) == 3);                                    // still b_second
+    }
     std::printf("automate %d updateDisplay %d\n", g_automate, g_updates);
     p.d(effMainsChanged, 0, 0); p.d(effClose);
     std::printf("plugin_test: %s (%d failures)\n", g_fail ? "FAILED" : "ok", g_fail);

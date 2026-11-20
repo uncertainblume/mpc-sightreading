@@ -16,6 +16,7 @@
 #include "sr/listen.h"
 
 #include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -142,6 +143,40 @@ static int selftest()
             int n = cls == gen::kSpace ? gen::kFrames_space : (cls == gen::kLine ? gen::kFrames_line : gen::kFrames_ledger);
             CHECK(sl.cells[r] < n);
         }
+    // --- 0.6.0: a light of the step after next goes off when you touch it, as a next one does --
+    {
+        std::vector<uint8_t> stepState(sc.steps.size()), noteState(sc.notes.size());
+        Engine eng; EngineSettings st; st.mode = 0;
+        eng.setScore(&sc, stepState.data(), noteState.data());
+        Engine::NoteIn in[2];
+        eng.process(st, in, 0, 128, 44100);
+        PlusOneTouches po;
+        auto lit = [&](int pass) {
+            std::vector<int> v;
+            guideNotes(eng, 2, po, [&](int ps, const PlayNote& pn) { if (ps == pass) v.push_back(pn.pitch); });
+            std::sort(v.begin(), v.end());
+            return v;
+        };
+        auto play = [&](int pitch) { po.touch(pitch); in[0] = {0, (uint8_t)pitch, true}; eng.process(st, in, 1, 128, 44100); };
+        CHECK(lit(0) == std::vector<int>({48, 72}) && lit(1) == std::vector<int>({74}));
+        play(74);                                                       // the D of the step after next, early
+        CHECK(eng.currentStep() == 0 && eng.wrongs() == 1);             // Wait mode still waits for the C chord
+        CHECK(lit(1).empty());                                          // ... but the D's light is off
+        CHECK(lit(0) == std::vector<int>({48, 72}));
+        play(72);
+        CHECK(lit(0) == std::vector<int>({48}) && lit(1).empty());      // a next note off as it is played
+        play(48);                                                       // the chord is done
+        CHECK(lit(0) == std::vector<int>({74}));                        // the D is the next note now: lit again
+        CHECK(lit(1) == std::vector<int>({76}));
+        play(76);                                                       // the E early this time
+        CHECK(lit(1).empty() && lit(0) == std::vector<int>({74}));
+        play(74);
+        CHECK(lit(0) == std::vector<int>({76}));                        // and the E comes back as the next note
+        eng.restart(); po.reset(); eng.process(st, in, 0, 128, 44100);
+        CHECK(lit(1) == std::vector<int>({74}));                        // a restart forgets the touches
+        guideNotes(eng, 1, po, [](int, const PlayNote&) {});
+        CHECK(po.step == -1);                                           // no step after next shown: nothing kept
+    }
     // --- engine: wait mode ----------------------------------------------------------------------
     {
         std::vector<uint8_t> stepState(sc.steps.size()), noteState(sc.notes.size());

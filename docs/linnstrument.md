@@ -80,8 +80,29 @@ One Channel mode, that channel. 0.4.0 defaulted to 1, which an MPE LinnStrument 
 When you release a highlighted note, the instrument clears the cell under your finger. If that
 note is still (or again) the one to press, the plugin lights it again.
 
+**Touching a light turns it off (0.6.0)**, in both steps. A next note goes dark because you played
+it. A note of the step after goes dark when you touch it too, and stays dark while that step is
+the one after. In Wait mode a note played early does not count yet. So when its step becomes the
+next one, it lights again in the next-note colour, and you play it then. In Rhythm and Flow, a
+note played ahead of the clock counts, and stays dark.
+
 With Played in both colours, the two steps look the same: pick a colour for After Clr to tell
 them apart. A colour paints the cells, so with a custom light pattern set Restore = Pattern n.
+
+**Which colours.** The instrument has a fixed set: red, yellow, green, cyan, blue, magenta,
+white, orange, lime, pink, and off. They are defined in its firmware (`COLOR_*` in
+`linnstrument-firmware.ino`), and CC 22 picks one of them by number. Each LED channel is either on
+or off. The firmware makes orange, lime, pink and white by switching a cell between two mixes
+on alternate refresh passes, inside the instrument. MIDI cannot ask for another mix, a brightness
+or a pulse.
+
+Doing that blinking from the plugin would take hundreds of messages a second per cell. That is
+the kind of burst the instrument drops (see 0.5.6), and it would flicker. For two steps that read
+as one family, pick neighbours that you use for nothing else:
+- green and lime;
+- blue and cyan;
+- red and orange, or red and pink;
+- magenta and pink.
 
 ## Fit Range: everything on the surface
 

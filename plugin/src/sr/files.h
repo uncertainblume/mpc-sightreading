@@ -3,6 +3,8 @@
 //
 //   <drive>/SightReader/Library/<Folder>/*.mid    the library (tools/library.py fills it)
 //   <drive>/SightReader/Library/<Folder>/index.tsv optional titles: file, title, composer, level, source
+//   <drive>/SightReader/Library/.rescan            touched by the MIDI loader (and tools/library.py push)
+//                                                  after it changes the library: the plugin rescans
 //   <drive>/SightReader/Generated/*.mid             exercises saved from GEN
 //   <drive>/SightReader/progress.tsv                one line per piece
 //   <drive>/SightReader/days.txt                    days practised (for the streak)
@@ -80,6 +82,36 @@ inline long fileMTime(const std::string& path)
 #endif
     (void)path;
     return 0;
+}
+// What the library marker looks like right now: one stat(), no reading. The loader replaces the
+// file (a new inode) and its time changes, so either tells the plugin that the library changed,
+// whatever the drive's time resolution.
+struct FileStamp
+{
+    bool exists = false;
+    long long mtimeNs = 0, size = -1;
+    unsigned long long inode = 0;
+    bool operator==(const FileStamp& o) const { return exists == o.exists && mtimeNs == o.mtimeNs && size == o.size && inode == o.inode; }
+    bool operator!=(const FileStamp& o) const { return !(*this == o); }
+};
+inline FileStamp fileStamp(const std::string& path)
+{
+    FileStamp f;
+#if SR_POSIX
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return f;
+    f.exists = true;
+    f.size = (long long)st.st_size;
+    f.inode = (unsigned long long)st.st_ino;
+  #if defined(__APPLE__)
+    f.mtimeNs = (long long)st.st_mtimespec.tv_sec * 1000000000LL + st.st_mtimespec.tv_nsec;
+  #else
+    f.mtimeNs = (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
+  #endif
+#else
+    (void)path;
+#endif
+    return f;
 }
 inline std::string lower(std::string s) { for (char& c : s) c = (char)((c >= 'A' && c <= 'Z') ? c + 32 : c); return s; }
 

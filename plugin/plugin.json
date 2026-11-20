@@ -1,7 +1,7 @@
 {
   "name": "Sight Reader",
   "manufacturer": "Practice Tools",
-  "version": "0.5.6",
+  "version": "0.6.0",
   "format": "vst2",
   "kind": "instrument",
   "uid": "SgRd",

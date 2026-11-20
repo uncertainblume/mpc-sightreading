@@ -22,72 +22,33 @@ Carlos, the pioneer without whom none of this would be possible.*
 
 If anyone finds any of this this super useful and can afford it, send me a tip on PayPal, I'm hilariously unemployed: <img width="500" height="500" alt="paypalqrcode" src="https://github.com/user-attachments/assets/f481d192-200a-4d61-a5a7-09f00cb26175" />
 
-**Status: version 0.5.6.** Sight Reader has been in use on an MPC Live III since 0.1: the pages,
+**Status: version 0.6.0.** Sight Reader has been in use on an MPC Live III since 0.1: the pages,
 the notation, the cursor, the practice modes, LISTEN, the piece list and the LinnStrument's lights
-work on the device. 0.5.6 makes the LinnStrument's guide lights keep up: the next notes turn to
-their colour as soon as you play, and a colour the instrument missed is sent again within a
-fraction of a second. 0.5.5 answered the notes from playing 0.5.1:
+work on the device. 0.6.0 adds:
 
-- **LISTEN transport**: pause and go on from the same place. The Bar field and the jog wheel move
-  what you hear, and **SET** next to Loop From / Loop To marks the loop at the bar you hear.
-- **Accompaniment**: with one hand practised, the other hand plays to MIDI Out in time. In Wait
-  mode it waits for you whenever your note is due. It is on by default.
-- **LinnStrument**:
-  - **Fit Range** folds notes the surface cannot play into its range.
-  - The guide always shows the next note to press, and has its own colour for the note after.
-  - It follows the instrument's Octave and Transpose, read from the instrument.
-- **The jog wheel steps evenly**: one step per click on every number (Tempo 100, 101, 102...).
+- **The MIDI loader** ([loader/](loader/README.md)): a page in your browser for putting your own
+  MIDI files on the MPC. Drop `.mid` files into collections, press **Sync**, and the MPC's library
+  matches your computer's. It also restarts the MPC app. Everything runs on your computer; the
+  MPC only sees an SSH login.
+- **The library rescans by itself** after a sync (Sight Reader looks at one marker file every 2
+  seconds), keeping your place in the LOAD list.
+- **The step-after light goes off when you touch it**, as a next-note light does.
 
-0.5.6 passes the SDK's validator (0 errors, 0 warnings), its host simulator, and an end-to-end
-test that plays pieces through the plugin's VST interface and checks the screen. The 0.5.5 and
-0.5.6 changes have not yet been tried on the MPC.
+0.5.6 made the LinnStrument's guide lights keep up. 0.5.5 brought:
+- LISTEN pause, seek and loop marking;
+- the other hand played in time to MIDI Out;
+- Fit Range for the LinnStrument's surface, and following its Octave and Transpose;
+- even jog-wheel steps.
 
-## What you can use it with
+0.6.0 passes the SDK's validator (0 errors, 0 warnings), its host simulator, an end-to-end test
+that plays pieces through the plugin's VST interface and checks the screen, and the loader's
+tests. Those run every loader operation against a pretend MPC (under `sh` and `busybox`) and the
+page in a browser. The 0.5.5 to 0.6.0 changes have not yet been tried on the MPC.
 
-### Any MIDI keyboard or controller
-
-Sight Reader needs nothing but notes on the track's MIDI input, on any channel:
-
-- **Keyboards** of any size, by USB or DIN.
-- **The MPC Key 61 / Key 37's own keys.**
-- **The MPC's pads** in a chromatic or scale pad-perform mode.
-- **MPE controllers** (Seaboard, Osmose, LinnStrument...): every channel is listened to.
-- **Wind controllers and MIDI guitars.**
-
-What helps with a small or unusual instrument:
-
-| If your instrument... | Use |
-|---|---|
-| has fewer keys than the music needs | **Pitch Tol = Octave** (the right note in any octave counts), or **Range** (MORE) to ask only for notes you have, or **Transpose** |
-| is set an octave off | the message line says so ("You play C5, the music says C4"); Octave tolerance or transpose the instrument |
-| is played one hand at a time | **Hands = Right / Left**; the other staff is dimmed and not asked for |
-| sends a whole piece on one channel | **Split** (MORE) divides a one-track file into hands at a note |
-
-Sight Reader makes no sound of its own except a quiet error sound and an optional metronome: your
-instrument stays on its own track listening to the same input, so you hear yourself. LISTEN and
-Accomp send MIDI to an instrument track of your choice instead.
-
-### A LinnStrument, in addition
-
-Switch **Linn Mode** on (LINN page) and the instrument lights:
-
-- the next notes to press (in its own Played colour or any colour), and the step after in a
-  colour of its own; a note you press goes dark and the next one lights;
-- a suggested cell and finger for each note (a hand-position planner for the fourths grid);
-- every note of the loop or of the bars on screen (LIGHT BARS);
-- the MPC project's key or pad scale (Key Lights);
-- each note as it sounds while LISTEN plays.
-
-Notes the surface cannot play are folded by octaves onto it (**Fit Range**), and the lights follow
-the instrument's own Octave and Transpose (read from it over USB). Your note-light settings are
-never changed: with a custom light pattern, **Restore = Pattern n** puts it back exactly after
-any coloured lights. On the staff, every note can carry a dot of its LinnStrument colour (COLOR
-page), so the screen speaks the instrument's colour language.
-
-**If the lights do nothing:** unplug the
-LinnStrument and plug it back in, then press TEST LIGHTS (LINN page). On the author's MPC Live III the LinnStrument once stopped taking anything the MPC
-sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a second route. See
-[docs/linnstrument.md](docs/linnstrument.md).
+If the LinnStrument's lights do nothing, unplug the LinnStrument and plug it back in, then press
+TEST LIGHTS (LINN page). On the author's MPC Live III the LinnStrument once stopped taking
+anything the MPC sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a
+second route. See [docs/linnstrument.md](docs/linnstrument.md).
 
 ## What it does
 
@@ -105,7 +66,7 @@ sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a s
 | **Feedback** | A band marks the current note; notes you play turn green, missed notes red, and a wrong note appears as a red note where you played it (with its accidental). A red flash can cover the staff on a mistake. The header shows the next note of each hand and the note you played, and says what is wrong when you seem stuck (the other hand's note still wanted, or an instrument an octave off). A quiet error sound (six timbres, volume, pitch and an ADSR envelope) sounds on a mistake and again softer on every Nth note afterwards, so you notice during a fast run. Accuracy, misses, bar and tempo are on screen. |
 | **Note colours** | A dot of each note's colour in every notehead still to be played, set per note on the COLOR page. The default is a LinnStrument scheme: C cyan, D blue, E pink, F magenta, G white, A yellow, B orange, with in-between hues for the black keys (D# navy, F# a light salmon pink...). |
 | **Readouts** | Under every setting, a line that says what its current choice does ("Count: a wrong note lowers accuracy; the music goes on"); values carry their units (160 ms, 30%, Ch 1). |
-| **Material** | 224 built-in drills (scales and arpeggios for each hand, modes, intervals, rhythm levels 1-5, ledger lines, hands-together scales and coordination, LinnStrument shapes), an exercise generator (any key and mode, rhythm and leap difficulty 1-5, left-hand styles), and a library you fill from the [Mutopia Project](https://www.mutopiaproject.org) or with your own files over SSH. |
+| **Material** | 224 built-in drills (scales and arpeggios for each hand, modes, intervals, rhythm levels 1-5, ledger lines, hands-together scales and coordination, LinnStrument shapes), an exercise generator (any key and mode, rhythm and leap difficulty 1-5, left-hand styles), and a library you fill with your own files (the MIDI loader) or from the [Mutopia Project](https://www.mutopiaproject.org). |
 | **Progress** | Per piece: plays, best and last accuracy, minutes, best tempo reached at your goal, and accuracy for each sixteenth of the piece; a day streak. Stored in `SightReader/progress.tsv` on the MPC's drive. |
 | **Themes** | PLAY comes in Night and Day: press its function key again for LIGHT, the same page on light paper. The settings pages use the MPC's own dark style. |
 
@@ -116,7 +77,7 @@ sent it over USB, and a replug brought it back. The MPC's MIDI Out jacks are a s
 You need MPC OS 3.10.1 or later with **Preferences → Enhancements (Beta) → Enable Enhancements**
 and **External Plugin Support** switched on.
 
-1. Download `sight-reader-0.5.6-mpc.zip` from the
+1. Download `sight-reader-0.6.0-mpc.zip` from the
    [releases](https://github.com/uncertainblume/mpc-sightreading/releases) (the same file is in
    [dist/](dist/)) and unzip it, or build it yourself (below).
 2. Copy the folder `Practice Tools - VST - Sight Reader` into `VST2 Plugins` at the top of the
@@ -125,7 +86,7 @@ and **External Plugin Support** switched on.
    first):
 
    ```bash
-   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.5.6-mpc.zip
+   python3 third_party/mpc-plugin-builder-sdk/tools/mpc_remote.py <mpc-ip> --drive 1 update dist/sight-reader-0.6.0-mpc.zip
    ```
 3. Restart the MPC app. Sight Reader is under **External Plugins**. Projects that already use it
    keep their settings.
@@ -150,31 +111,46 @@ this input (or set its input to *All Ports*). If the port is not in the list: Pr
 Sync → Input Ports, turn **Track** on for it. Do not set Sight Reader's own track input to *All
 Ports* (its LISTEN and Accomp notes would come back to it).
 
-## Fill the library over SSH
+## Add your own MIDI files: the MIDI loader
+
+On a Mac, double-click `loader/mpc-sightreading-midi-loader.command` in this repository (or run
+the command below, on any computer with Python 3.8+ and `ssh`). A page opens in your browser:
 
 ```bash
-python3 tools/library.py sync 192.168.1.20
+python3 loader/mpc-sightreading-midi-loader.py
 ```
 
-That downloads the 70 curated pieces in [library/catalog.tsv](library/catalog.tsv) (Bach's
-Anna Magdalena notebook, Czerny, Burgmüller, Tchaikovsky, Schumann, Satie, Chopin, Mozart,
-Clementi, Joplin...) into `library/cache/` and copies them to `/nvme/SightReader/Library` on the
-MPC in one SSH command. Then press **RESCAN** on the LOAD page. More:
+- The first time, enter the MPC's IP address. The MPC shows it in Preferences: the Wi-Fi tab
+  (hold Shift) or the Ethernet tab. The address is remembered on your computer, not in the
+  repository.
+- Drop `.mid` files onto the page. They go into collections, the folders of the LOAD list. Click a
+  piece to give it a title, composer and level.
+- Press **Sync to the MPC**. New and changed pieces are copied; pieces you removed are removed
+  from the MPC, but only ones this computer put there.
+- Sight Reader 0.6.0 picks the change up by itself within a few seconds.
+- **Restart the MPC app** is there too, for when you need it (save your project first).
+
+The MPC needs developer mode on, which starts its SSH server; see
+[loader/README.md](loader/README.md) for that and the rest.
+
+## Download music from the Mutopia Project
+
+```bash
+python3 tools/library.py fetch
+```
+
+That downloads the 70 curated pieces in [library/catalog.tsv](library/catalog.tsv) into
+`library/cache/`: Bach's Anna Magdalena notebook, Czerny, Burgmüller, Tchaikovsky, Schumann,
+Satie, Chopin, Mozart, Clementi, Joplin... `library/cache/` is also the loader's library when you
+run the loader from this repository, so **Sync** on its page puts them on the MPC. More:
 
 ```bash
 python3 tools/library.py mutopia "Clementi" --max 20
 ```
 
-```bash
-python3 tools/library.py add ~/Music/*.mid --collection "My Songs"
-```
-
-```bash
-python3 tools/library.py device-script > get.sh && ssh root@192.168.1.20 sh -s < get.sh
-```
-
-The last one downloads straight onto the MPC, if its firmware has `curl` or `wget`. Popular songs
-under copyright are not included: add your own files with `add`.
+Without the loader, `tools/library.py push <mpc-ip>` copies the cache to the MPC in one SSH
+command, and `tools/library.py sync <mpc-ip>` fetches and pushes. Popular songs under copyright
+are not included: add your own files with the loader.
 
 ## Build
 
@@ -190,12 +166,13 @@ tools/run_tests.sh
 ```
 
 The first build fetches Akai's SDK (pinned commit) and, through it, the Zig cross compiler. The
-output folder is `plugin/build/Practice Tools - VST - Sight Reader/`. Releases are built by the
-[release workflow](.github/workflows/release.yml) from tags like `v0.5.6`.
+output folder is `plugin/build/Practice Tools - VST - Sight Reader/`. A release is published by
+the [release workflow](.github/workflows/release.yml) when its version and zip reach `main`.
 
 ## Read more
 
 - [docs/user-guide.md](docs/user-guide.md): every page and setting.
+- [loader/README.md](loader/README.md): the MIDI loader.
 - [docs/linnstrument.md](docs/linnstrument.md): the LinnStrument features, the routes, the MIDI
   they use, and the USB problem.
 - [docs/design.md](docs/design.md): how a plugin with no drawing API shows scrolling notation,
@@ -216,9 +193,10 @@ tools/gen_skin.py      writes plugin/skins and the generated headers
 tools/skin/            screen geometry, the frame catalogue, glyph rendering, page previews
 tools/make_drills.py   the built-in drills
 tools/library.py       library download and SSH push
+loader/                the MIDI loader: the page, sync over SSH, restart (one Python file)
 library/catalog.tsv    the curated list of pieces
-tests/                 unit tests, the end-to-end plugin test
-dist/                  the ready-to-install zip of the current version
+tests/                 unit tests, the end-to-end plugin test, the loader's tests
+dist/                  the ready-to-install zips of the current version
 ```
 
 ## Credits and licences

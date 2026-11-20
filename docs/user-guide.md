@@ -145,8 +145,15 @@ Folder (knob), Scroll (knob), Sort (Name, Best %, Recent, Level). **Turn the dat
 list** to move the selection through the whole folder (the list scrolls with it), and **push the
 wheel** to load it; or tap a row and press **LOAD** (a double-tap on a row loads it too). Each row
 shows your best accuracy for that piece. The details panel shows the composer, level, your record
-and where the file came from. **RESCAN** after copying new files. Loading a piece makes its folder
-PLAY's piece list (see PLAY), so one load is enough to go through a whole folder of drills.
+and where the file came from. Loading a piece makes its folder PLAY's piece list (see PLAY), so
+one load is enough to go through a whole folder of drills.
+
+**New files:** the MIDI loader ([loader/README.md](../loader/README.md)) puts your own files here
+from a page on your computer. After its Sync, the list updates by itself within a couple of
+seconds, keeping the folder and file you had selected, and the message line says "Library
+updated from your computer". Sight Reader notices by looking at one small file,
+`SightReader/Library/.rescan`, every 2 seconds; `tools/library.py push` touches it too. Files
+copied any other way: press **RESCAN** (it keeps your place as well).
 
 **Playlist:** **ADD TO LIST** puts the selected file at the end of your playlist; it appears as
 the last folder, **Playlist**, in the order you added the files (the same file can be in it more
@@ -243,8 +250,8 @@ The dot is sized so a half or whole note still looks hollow; on the hand you are
 
 **Linn Mode**, **Linn Port** (USB, or the MPC's MIDI Out A/B to the LinnStrument's MIDI In),
 **Fit Range** (fold notes the surface cannot play onto it, or skip them), **TEST LIGHTS**, the
-guide (**Guide Clr** for the next notes, **After Clr** for the step after), fingering, LIGHT
-BARS, Key Lights and **Restore**. Press LINN again for LAYOUT: size, row offset, lowest note,
+guide (**Guide Clr** for the next notes, **After Clr** for the step after; a light goes off
+when you touch its note, in both), fingering, LIGHT BARS, Key Lights and **Restore**. Press LINN again for LAYOUT: size, row offset, lowest note,
 left-handed, **Linn Ch**, and the instrument's **Octave** and **Transpose** (read from it with
 **Read Transp** on). See [linnstrument.md](linnstrument.md).
 

@@ -322,5 +322,59 @@ private:
     uint8_t recent_[kCols][kRows];           // heals left for a cell lately let go of
 };
 
+// The step after next (0.6.0): a light you touch there goes off and stays off while that step
+// is the one after next, as a light of the next step does. Wait mode still asks for the note when
+// its step comes up, so it lights again then, in the next step's colour.
+struct PlusOneTouches
+{
+    int step = -1;                          // the step after next that these belong to
+    uint8_t lit[16] = {}, touched[16] = {}; // its pitches; the ones you touched
+    static bool has(const uint8_t* bits, int p) { return ((bits[(p >> 3) & 15] >> (p & 7)) & 1) != 0; }
+    static void put(uint8_t* bits, int p) { bits[(p >> 3) & 15] |= (uint8_t)(1u << (p & 7)); }
+    // each block, before the step's notes are added: a new step forgets the touches
+    void begin(int s)
+    {
+        if (s != step) { step = s; std::memset(touched, 0, sizeof(touched)); }
+        std::memset(lit, 0, sizeof(lit));
+    }
+    void add(int pitch) { put(lit, pitch & 127); }
+    void touch(int pitch) { if (step >= 0 && has(lit, pitch & 127)) put(touched, pitch & 127); }
+    bool hidden(int pitch) const { return step >= 0 && has(touched, pitch & 127); }
+    void reset() { step = -1; std::memset(lit, 0, sizeof(lit)); std::memset(touched, 0, sizeof(touched)); }
+};
+
+// The notes the guide lights: the next step still to press, and with passes = 2 the step after
+// it. A step whose notes you have all played (ahead of the clock in Rhythm or Flow, 0.5.5) is
+// passed over, so the guide always shows what to press next; a note of the step after next you
+// touched stays dark while it is that (0.6.0). onNote(pass, note) for each note to light.
+template <typename E, typename F>
+inline void guideNotes(const E& engine, int passes, PlusOneTouches& plusOne, F onNote)
+{
+    auto allPlayed = [&engine](int st) {
+        bool open = false;
+        engine.forEachRequired(st, [&open](const PlayNote&, uint8_t state) { if (state != 1) open = true; });
+        return !open;
+    };
+    int s = engine.nextRequiredStep(engine.currentStep() > 0 ? engine.currentStep() : 0);
+    while (s >= 0 && allPlayed(s)) s = engine.nextRequiredStep(s + 1);
+    bool plusOneSeen = false;
+    for (int pass = 0; pass < passes && s >= 0; ++pass)
+    {
+        if (pass == 1) { plusOne.begin(s); plusOneSeen = true; }
+        engine.forEachRequired(s, [&](const PlayNote& pn, uint8_t state) {
+            if (state == 1) return;                       // played: off
+            if (pass == 1)
+            {
+                plusOne.add(pn.pitch);
+                if (plusOne.hidden(pn.pitch)) return;    // touched while it is the step after next: off too
+            }
+            onNote(pass, pn);
+        });
+        s = engine.nextRequiredStep(s + 1);
+        while (s >= 0 && allPlayed(s)) s = engine.nextRequiredStep(s + 1);
+    }
+    if (!plusOneSeen) plusOne.reset();
+}
+
 } // namespace sr
 #endif

@@ -20,6 +20,7 @@ import tempfile
 import threading
 import time
 import unittest
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAKE_SSH = os.path.join(ROOT, "tests", "fake_ssh.py")
@@ -296,6 +297,147 @@ class LoaderTests(Base):
         self.assertFalse(self.app.mpc["auto_rescan"])
         job = self.sync()
         self.assertIn("RESCAN", " ".join(job.lines))
+
+
+class WebSite:
+    """A small web server on 127.0.0.1 with the kinds of links people paste."""
+    def __init__(self):
+        import http.server
+        z = io.BytesIO()
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("pack/a.mid", smf([60, 62]))
+            zf.writestr("pack/b.midi", smf([64, 65]))
+            zf.writestr("pack/readme.txt", "not music")
+            zf.writestr("pack/deeper/c.mid", smf([67]))
+        page = ('<html><head><title>Bach at Mutopia</title></head><body>'
+                '<a href="piece.mid">Piece</a> <a href="/pack.zip">All of them</a> <a href="piece.mid#top">again</a>'
+                '<a href="score.pdf">PDF</a> <a href="mailto:x@example.org">mail</a>'
+                '<a href="http://127.0.0.1:%d/other/song.MID">elsewhere</a></body></html>')
+        site = self
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+            def do_GET(self):
+                path = self.path.split("?")[0]
+                body, ctype, extra, code = None, "application/octet-stream", {}, 200
+                if path in ("/piece.mid", "/other/song.MID"):
+                    body, ctype = smf([60, 64, 67]), "audio/midi"
+                elif path == "/pack.zip":
+                    body, ctype = z.getvalue(), "application/zip"
+                elif path == "/page.html":
+                    body, ctype = (page % site.port).encode(), "text/html; charset=utf-8"
+                elif path == "/empty.html":
+                    body, ctype = b"<html><body>no links</body></html>", "text/html"
+                elif path == "/dl":
+                    body, extra = smf([72]), {"Content-Disposition": 'attachment; filename="Goldberg Aria.mid"'}
+                elif path == "/notmidi.bin":
+                    body = b"\x00\x01 just bytes"
+                elif path == "/big.mid":
+                    body = b"MThd" + b"\x00" * (9 << 20)
+                elif path == "/forbidden.mid":
+                    code = 403
+                else:
+                    code = 404
+                self.send_response(code)
+                for k, v in extra.items():
+                    self.send_header(k, v)
+                if body is not None:
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if body is not None:
+                    self.wfile.write(body)
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def url(self, path):
+        return "http://127.0.0.1:%d%s" % (self.port, path)
+
+    def close(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+class LinkTests(Base):
+    """Add from a link (0.6.5): downloaded by the computer, never by the MPC."""
+    def setUp(self):
+        Base.setUp(self)
+        self.web = WebSite()
+
+    def tearDown(self):
+        self.web.close()
+        Base.tearDown(self)
+
+    def test_a_midi_link(self):
+        r = self.app.add_from_links([self.web.url("/piece.mid")], "From the Web")
+        self.assertEqual((r["added"], r["collection"]), (["piece.mid"], "From the Web"))
+        rows = loader.read_index_text(rt(os.path.join(self.libdir, "From the Web", "index.tsv")))
+        self.assertEqual(rows["piece.mid"][4], self.web.url("/piece.mid"))      # where it came from
+        again = self.app.add_from_links([self.web.url("/piece.mid")], "From the Web")
+        self.assertEqual((again["added"], again["already"]), ([], 1))
+        named = self.app.add_from_links([self.web.url("/dl?id=7")], "From the Web")
+        self.assertEqual(named["added"], ["Goldberg Aria.mid"])                   # the name the site gave
+
+    def test_a_zip_of_midi_files(self):
+        r = self.app.add_from_links([self.web.url("/pack.zip")], "Pack")
+        self.assertEqual(sorted(r["added"]), ["a.mid", "b.midi", "c.mid"])
+        self.assertEqual(sorted(os.listdir(os.path.join(self.libdir, "Pack"))), ["a.mid", "b.midi", "c.mid", "index.tsv"])
+
+    def test_a_page_of_links(self):
+        r = self.app.add_from_links([self.web.url("/page.html")], "Bach")
+        self.assertEqual(r["title"], "Bach at Mutopia")
+        self.assertEqual([l["name"] for l in r["links"]], ["piece.mid", "pack.zip", "song.MID"])
+        self.assertFalse(os.path.exists(os.path.join(self.libdir, "Bach")))       # nothing added yet
+        picked = self.app.add_from_links([r["links"][0]["url"], r["links"][2]["url"]], "Bach")
+        self.assertEqual(sorted(picked["added"]), ["piece.mid", "song.mid"])
+        with self.assertRaises(loader.LibraryError) as e:
+            self.app.add_from_links([self.web.url("/empty.html")], "Bach")
+        self.assertIn("no links to MIDI files", str(e.exception))
+
+    def test_what_goes_wrong_is_said(self):
+        cases = [("/forbidden.mid", "turned the loader away"), ("/missing.mid", "nothing at that link"),
+                 ("/notmidi.bin", "not a MIDI file"), ("/big.mid", "over 8 MB")]
+        for path, words in cases:
+            with self.assertRaises(loader.LibraryError) as e:
+                self.app.add_from_links([self.web.url(path)], "X")
+            self.assertIn(words, str(e.exception), path)
+        with self.assertRaises(loader.LibraryError) as e:
+            self.app.add_from_links(["file:///etc/passwd"], "X")
+        self.assertIn("http:// or https://", str(e.exception))
+        # several links: what worked is added, what did not is listed
+        r = self.app.add_from_links([self.web.url("/piece.mid"), self.web.url("/missing.mid")], "Mixed")
+        self.assertEqual(r["added"], ["piece.mid"])
+        self.assertEqual(len(r["problems"]), 1)
+        self.assertIn("missing.mid", r["problems"][0])
+
+    def test_share_links(self):
+        self.assertEqual(loader.direct_link("https://github.com/someone/songs/blob/main/bach/aria.mid"),
+                         "https://raw.githubusercontent.com/someone/songs/main/bach/aria.mid")
+        self.assertEqual(loader.direct_link("https://drive.google.com/file/d/1AbC_d-9/view?usp=sharing"),
+                         "https://drive.google.com/uc?export=download&id=1AbC_d-9")
+        self.assertEqual(loader.direct_link("https://www.dropbox.com/s/xyz/aria.mid?dl=0"),
+                         "https://www.dropbox.com/s/xyz/aria.mid?dl=1")
+        self.assertEqual(loader.direct_link("https://example.org/a.mid"), "https://example.org/a.mid")
+
+    def test_through_the_page_api(self):
+        httpd = loader.serve(self.app, 0)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            body = json.dumps({"urls": [self.web.url("/pack.zip")], "collection": "Via the page"}).encode()
+            c.request("POST", "/api/url", body=body, headers={"Host": "127.0.0.1:%d" % port, "X-Loader-Token": self.app.token,
+                                                                  "Content-Type": "application/json"})
+            r = c.getresponse()
+            j = json.loads(r.read().decode())
+            c.close()
+            self.assertEqual(r.status, 200)
+            self.assertEqual(len(j["added"]), 3)
+            self.assertEqual(self.app.state()["settings"]["last_collection"], "Via the page")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
 
 
 class ShellTests(LoaderTests):

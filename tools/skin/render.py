@@ -678,6 +678,9 @@ def caption_button(theme, w, h, on, style, caption):
     else:
         d.rounded_rectangle(box, r, fill=rgba(t["text"], 16), outline=rgba(t["panel_line"]), width=2 * S2)
         col = rgba(t["text"])
+    if caption.startswith("icon:"):
+        transport_icon(d, caption[5:], w * S2 / 2, h * S2 / 2, h * S2 * 0.36, col)
+        return im.resize((w, h), Image.LANCZOS)
     size = 21 if style == "button" else 19
     while size > 11:
         f = font("TitilliumWeb-SemiBold.ttf", size * S2)
@@ -686,6 +689,30 @@ def caption_button(theme, w, h, on, style, caption):
         size -= 1
     d.text((w * S2 / 2, h * S2 / 2), caption, font=f, fill=col, anchor="mm")
     return im.resize((w, h), Image.LANCZOS)
+
+def transport_icon(d, kind, cx, cy, s, col):
+    """Transport symbols drawn as shapes (0.6.5), so no font has to have them: start |<, back <<,
+    forward >>. s is the symbol's height."""
+    tw = s * 0.8                                          # one triangle's width
+    def left(x_tip):
+        d.polygon([(x_tip + tw, cy - s / 2), (x_tip + tw, cy + s / 2), (x_tip, cy)], fill=col)
+    def right(x_base):
+        d.polygon([(x_base, cy - s / 2), (x_base, cy + s / 2), (x_base + tw, cy)], fill=col)
+    if kind == "start":
+        bar = s * 0.18
+        x0 = cx - (bar + s * 0.08 + tw) / 2
+        d.rectangle([x0, cy - s / 2, x0 + bar, cy + s / 2], fill=col)
+        left(x0 + bar + s * 0.08)
+    elif kind == "back":
+        x0 = cx - tw * 1.6 / 2
+        left(x0)
+        left(x0 + tw * 0.6)
+    elif kind == "fwd":
+        x0 = cx - tw * 1.6 / 2
+        right(x0)
+        right(x0 + tw * 0.6)
+    else:
+        raise ValueError("no transport icon %r" % kind)
 
 def readout_image(theme, text, w, h, size, max_lines, named=True):
     """One readout: "Name: what it does", the name brighter (named), wrapped to max_lines."""

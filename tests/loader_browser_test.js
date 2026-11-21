@@ -8,6 +8,7 @@
 "use strict";
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
+const http = require("http");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -36,12 +37,25 @@ function smf(notes) {
   fs.writeFileSync(path.join(bin, "systemctl"), `#!/bin/sh\necho "$*" >> "${tmp}/systemctl.log"\ncase "$1" in cat|restart) exit 0;; is-active) echo active; exit 0;; esac\nexit 1\n`);
   fs.chmodSync(path.join(bin, "systemctl"), 0o755);
   const lib = path.join(tmp, "computer", "Library");
+  // a small web site for Add from a link
+  const site = http.createServer((req, res) => {
+    if (req.url === "/aria.mid") { res.writeHead(200, { "Content-Type": "audio/midi" }); res.end(smf([67, 69, 71])); }
+    else if (req.url === "/list.html") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end('<html><head><title>Some pieces</title></head><body><a href="one.mid">one</a> <a href="two.mid">two</a></body></html>');
+    }
+    else if (req.url === "/one.mid" || req.url === "/two.mid") { res.writeHead(200, { "Content-Type": "audio/midi" }); res.end(smf([60, 62])); }
+    else { res.writeHead(404); res.end(); }
+  });
+  await new Promise(r => site.listen(0, "127.0.0.1", r));
+  const siteUrl = p => "http://127.0.0.1:" + site.address().port + p;
   const env = Object.assign({}, process.env, {
     MPC_SSH_BIN: path.join(ROOT, "tests", "fake_ssh.py"), MPC_SR_LOADER_HOME: path.join(tmp, "settings"),
     MPC_SR_DRIVES: drive, FAKE_MPC_PATH: bin + ":" + process.env.PATH, FAKE_MPC_HOME: tmp,
   });
   const proc = spawn("python3", [path.join(ROOT, "loader", "mpc-sightreading-midi-loader.py"), "--no-browser", "--port", "0", "--library", lib], { env });
-  let out = "";
+  let out = "", exitCode = null;
+  proc.on("exit", c => { exitCode = c; });                 // from the start: Quit may be quicker than us
   proc.stdout.on("data", d => { out += d; });
   proc.stderr.on("data", d => { process.stderr.write(d); });
   const url = await new Promise((resolve, reject) => {
@@ -109,6 +123,22 @@ function smf(notes) {
     check(fs.existsSync(path.join(drive, "SightReader", "Library", ".rescan")), "the rescan marker is there");
     await page.waitForSelector('.piece[data-file="Goldberg Aria.mid"] .badge.same');
     check((await page.textContent("#sync-summary")).includes("has all your pieces"), "nothing left to sync");
+    // 0.6.5: add from a link, then from a page of links
+    await page.click("text=Add from a link…");
+    await page.fill("#m-url", siteUrl("/aria.mid"));
+    if (shots) await page.screenshot({ path: path.join(shots, "loader-link.png") });
+    await page.click("#dialog .btn.primary");
+    await page.waitForSelector('.piece[data-file="aria.mid"] .badge.new', { timeout: 15000 });
+    check(true, "a .mid link is added (and is New for the MPC)");
+    await page.click("text=Add from a link…");
+    await page.fill("#m-url", siteUrl("/list.html"));
+    await page.click("#dialog .btn.primary");
+    await page.waitForSelector("#dialog input[data-link]", { timeout: 15000 });
+    check((await page.textContent("#dialog")).includes("Some pieces"), "a page's MIDI links are offered, under its title");
+    await page.click("#m-all");
+    await page.click("#dialog >> text=Add selected");
+    await page.waitForSelector('.piece[data-file="two.mid"]', { timeout: 15000 });
+    check(await page.isVisible('.piece[data-file="one.mid"]'), "the picked links are added");
     // restart
     await page.click("#btn-restart");
     await page.click("#dialog .btn.danger");
@@ -135,7 +165,8 @@ function smf(notes) {
     await page.click("text=Quit loader");
     await page.click("#dialog .btn.primary");
     await page.waitForSelector("#stopped:not([hidden])");
-    const code = await new Promise(resolve => { proc.on("exit", c => resolve(c)); setTimeout(() => resolve("still running"), 8000); });
+    for (let i = 0; i < 80 && exitCode === null; i++) await new Promise(r => setTimeout(r, 100));
+    const code = exitCode === null ? "still running" : exitCode;
     check(code === 0, "Quit stops the loader (exit " + code + ")");
     check(errors.length === 0, "no errors in the page" + (errors.length ? ": " + errors.join(" | ") : ""));
   } catch (e) {
@@ -144,6 +175,7 @@ function smf(notes) {
     if (shots) await page.screenshot({ path: path.join(shots, "loader-failure.png") }).catch(() => {});
   } finally {
     await browser.close();
+    site.close();
     try { proc.kill(); } catch (e) { /* gone */ }
     fs.rmSync(tmp, { recursive: true, force: true });
   }

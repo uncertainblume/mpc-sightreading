@@ -1,14 +1,15 @@
 # Sight Reader: user guide
 
-Pages are the function keys under the screen: PLAY, LOAD, GEN, SETUP, MORE, SOUND, COLOR, LINN,
-STATS. **Press PLAY's key a second time for LIGHT**, the same page on light paper; both versions
-control the same settings. Press LINN's key again for **LAYOUT**, the LinnStrument's layout. The
-16 Q-Links follow the on-screen controls row by row (top row = Q-Links 13-16). On PLAY, Q-Links
-5-8 work the header's fields, **Bar, Note, BPM** and Loop Bars (the MPC draws its frame round
-them), and 1-4 are Timing, Pitch Tol, Chords and Error Vol. Tap a control to give it the data
-wheel; double-tap it (or push the wheel) for the MPC's large editor or list. Each click of the
-wheel moves a number by one step (Tempo 100, 101, 102...; Timing by 5 ms and the sound's
-envelope times by 20 ms); a menu moves one choice. The MPC's preset menu
+Pages are the function keys under the screen: PLAY, LOAD, LINN, GEN, SETUP, MORE, SOUND, COLOR,
+STATS (LINN third since 0.6.5). Press LINN's key again for **LAYOUT**, the LinnStrument's layout.
+PLAY is dark (a light version existed until 0.6.0; see the CHANGELOG). The 16 Q-Links follow the
+on-screen controls row by row (top row = Q-Links 13-16). On PLAY, Q-Links 5-8 work the header's
+fields, **Bar, Note, BPM** and Loop Bars (the MPC draws its frame round them), and 1-4 are
+Timing, Pitch Tol, Chords and Error Vol. Tap a control to give it the data wheel; double-tap it
+(or push the wheel) for the MPC's large editor or list. Each click of the wheel moves a number by
+exactly one value, and so do a Q-Link's steps and the large editor (0.6.5): Tempo 100, 101,
+102...; Timing and the sound's Decay, Release and Length by 5 ms. A menu moves one choice. The
+MPC's preset menu
 offers five practice presets (Wait exact, Wait relaxed, Flow medium, Rhythm strict, Rhythm slow);
 they change only practice settings.
 
@@ -16,9 +17,7 @@ Every switch has its options written on its buttons, the chosen one filled in. U
 a readout says what the current choice does, and changes as you change it; values show their
 units (160 ms, 30%, +2 st, Ch 1).
 
-![PLAY, Night](img/play-night.png)
-
-![LIGHT: PLAY on light paper](img/play-day.png)
+![PLAY](img/play-night.png)
 
 ![The piece list: tap the title](img/piece-list.png)
 
@@ -59,9 +58,14 @@ units (160 ms, 30%, +2 st, Ch 1).
   Hands to Right to practise the right hand alone), or "You play C5, the music says C4" when your
   instrument sounds an octave away from the music (Pitch Tol = Octave accepts any octave, or
   transpose the instrument).
-- **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; Play, Listen, Restart,
-  Loop, **Loop From** and **Loop To**, each with a **SET** button that puts it at the bar you
-  hear while LISTEN is on (else the bar the cursor is in). The loop's three numbers keep each other right: moving
+- **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; the **transport**
+  (below); **Loop From** and **Loop To**, each with a **SET** button that puts it at the bar you
+  hear while LISTEN is on (else the bar the cursor is in).
+- **Transport (0.6.5):** the row of buttons at the bottom left. **|<** goes back to the start
+  (RESTART: the start of the loop when Loop is on; it stops LISTEN). **<<** and **>>** move a bar
+  back or forward: what LISTEN plays while it is on (playing or paused), else the practice
+  cursor. **LISTEN** plays the piece and pauses it (below). **PLAY** starts and stops practice
+  (in Wait mode just start playing). **LOOP** switches the loop on and off. The loop's three numbers keep each other right: moving
   Loop From moves Loop To with it (same length), moving Loop To past Loop From pulls Loop From
   along, Loop Bars (Q-Link 8 or MORE) stretches it from Loop From, and the loop never runs past the
   end of the piece.
@@ -77,10 +81,11 @@ on, and in Linn Mode the LinnStrument lights each note as it sounds (with Guide 
 play is graded meanwhile and your practice position stays where it was. It stops at the end, or
 when you press PLAY or RESTART.
 
-**Its transport (0.5.5):** press LISTEN while it plays to **pause** (status PAUSED; the cursor
+**Its transport:** press LISTEN while it plays to **pause** (status PAUSED; the cursor
 stays where you stopped) and again to **go on** from there. While LISTEN is on, playing or
-paused, the header's **Bar** and **Note** fields (tap one, turn the jog wheel, or Q-Links 5 and
-6) move what you hear, and so does the MPC's playhead with Start = MPC Play. To find a loop by
+paused, the transport's **<<** and **>>** move what you hear a bar at a time, and so do the
+header's **Bar** and **Note** fields (tap one, turn the jog wheel, or Q-Links 5 and 6) and the
+MPC's playhead with Start = MPC Play. **|<** stops it and goes back to the start. To find a loop by
 ear: play, pause at the start of the passage, press **SET** by Loop From; go on, pause at its
 end, press **SET** by Loop To; switch **Loop** on and LISTEN plays just that, round and round.
 Switching Loop on or off while it plays changes what it plays.

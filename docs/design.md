@@ -49,7 +49,7 @@ Value changes reach the screen when the plugin calls `audioMasterAutomate` from 
   text. The MPC stores only the plugin's state chunk in a project, not per-parameter values, so
   the count does not bloat projects (checked against a saved project from this MPC).
 - **Tabs:** every entry in TUI.json shows on the MPC as its own tab button, sub-tabs included
-  (0.1.0's Night/Day sub-tabs doubled all seven), so only PLAY has a Day version (LIGHT).
+  (0.1.0's Night/Day sub-tabs doubled all seven), so only PLAY had a Day version (LIGHT), until 0.6.5 made it dark only (below).
 
 ### Limits respected (all from device measurements by others)
 
@@ -200,8 +200,8 @@ fall with yours were never sent. Now:
 
 In Rhythm and Flow the clock already carried it.
 
-**The wheel.** The MPC moves a number by a hundredth of its range per click (Akai's
-ui-reference 3.3: the coarse increment), and choices with replacement strings by one step. For
+**The wheel** (replaced in 0.6.5, see below). The MPC moves a number by a hundredth of its range per
+click (an inference, not Akai's documents), and choices with replacement strings by one step. For
 numbers, the plugin recognises a click and replaces it with one step from where the value was:
 - a click is a move of about a hundredth, against the value it last showed or the host's last
   value, or a shorter move cut off by either end of the range;
@@ -216,6 +216,55 @@ Transpose, which the plugin cannot see.
 - The answer is read on a second, input-only ALSA client subscribed to the instrument's port.
   This keeps the audio thread's output handle unshared and does not depend on what the MPC
   routes to the track.
+
+## 0.6.5: wheel steps, the transport, dark only
+
+**The wheel, again.** 0.5.5 assumed the MPC moves a number by a hundredth of its range per click,
+a figure inferred from the user's Tempo report (100, 102, 104, 105), not from Akai's documents. It
+turned such moves into one step and passed every other move through. The user found the wheel
+"jumping all over the place". The likely causes:
+- a fast turn sends a bigger move;
+- the MPC may step from a value the plugin has since changed;
+- a preset was not marked as a load.
+
+All of these passed through as jumps. Akai's ui-reference 3.3 is the documented way: a
+`replacementStrings` entry gives a parameter N steps, and the data wheel, the overlays and the
+Q-Links all honour them.
+- So every int and note parameter now has its list of values, with the texts formatValue() would
+  show (params.py `value_text`). The long time ranges step by 5 ms (`STEP`).
+- That is 21,549 strings, and TUI.json went from 1.4 MB to 977 KB, because the LIGHT copy of PLAY
+  went at the same time.
+- Folder's knob shows the folder's name through a second handle (`Shown`, mapped to the folder
+  name text).
+- The plugin keeps one check, in exact steps (`hostStep`). If what the MPC sends is far from the
+  value shown, but a small step from what the MPC itself last sent, the MPC was behind the plugin
+  (Bar following the cursor, BPM following Tempo). Then the same step is made from the value shown.
+- `effSetProgram` is marked as a load like `effSetChunk`, so presets are taken as they come.
+
+**The transport.** LISTEN's pause (0.5.5) and the Bar field's seek were there but hard to find. The
+second footer row now starts with a transport bar: |< (RESTART), <<, LISTEN, >>, PLAY, LOOP. The
+arrows are two triggers (`bar_back`, `bar_fwd`). Each moves the Bar value by one from the bar shown
+and asks for the same locate as the Bar field, which moves LISTEN when it is on and the practice
+cursor otherwise. The icons are drawn as shapes in the button pictures (render.py
+`transport_icon`), so no font has to have them.
+
+**Dark only, and how to bring Light back.** A Light switch in SETUP, which the user asked for
+first, cannot be done without more memory. A widget shows one image, and the MPC cannot make it
+show another by a setting. Stacking both themes' frames in one strip would pass the 16,384 px
+limit: the cell strips are 11,460 px. So a switch would mean both themes' staff layers (about
+1,400 pictures each) in the PLAY page, one set hidden by IndexedEnabling, and both decoded when the
+page loads. The two sub-tabs that 0.6.0 had loaded only the one shown. The user chose dark only.
+
+To bring LIGHT back:
+- set `WITH_LIGHT = True` in `tools/gen_skin.py` and rebuild;
+- the Day theme (`THEMES["day"]` in render.py) is still drawn;
+- PLAY's footer, the transport bar included, is built from the theme, so LIGHT gets it too;
+- LIGHT returns as a second sub-tab on PLAY's key, as in 0.6.0
+  ([what it looked like](img/play-day.png)).
+
+**Pages.** LINN moved to the third function key (PLAY, LOAD, LINN, GEN, SETUP, MORE, SOUND,
+COLOR, STATS). Nothing in the plugin depends on the order: Q-Links.json is written from the same
+list.
 
 ## 0.6.0: the MIDI loader runs on the computer
 

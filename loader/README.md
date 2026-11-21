@@ -77,6 +77,25 @@ the page:
 Each piece shows what is in it (length, range, notes, tracks) and its state against the MPC:
 **New**, **Changed** or **On the MPC**.
 
+### Add from a link (0.6.5)
+
+**Add from a link…** takes a web link, and so does a link dragged onto the page from another
+browser tab:
+- **a `.mid` file**: added;
+- **a `.zip` of MIDI files** (the Mutopia Project's `-mids.zip`, for example): every MIDI file in
+  it is added;
+- **a web page**: the loader lists the page's `.mid` and `.zip` links, under the page's title, and
+  you tick the ones to add.
+
+Share links from GitHub (a file's page), Google Drive (*Anyone with the link*) and Dropbox are
+turned into links to the file itself. The link is kept as the piece's source in `index.tsv`.
+
+Your computer downloads it, as your browser would (at most 64 MB, a MIDI file at most 8 MB). The
+MPC never touches the web. Some sites only let a browser download and turn scripts away. The page
+says so: then open the link in your browser, save the file, and drop it on the page. A Mac whose
+Python came from python.org may need *Install Certificates.command* (in its Python folder) once,
+for secure links.
+
 ## Sync
 
 **Sync to the MPC** shows what it will do, then does it:

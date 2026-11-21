@@ -2,142 +2,145 @@
 #pragma once
 namespace sr { namespace gen {
 enum ParamKind { kFloat = 0, kInt = 1, kBool = 2, kChoice = 3, kTrigger = 4, kNote = 5 };
-struct ControlDef { const char* id; const char* name; int kind; float min, max, def; const char* unit; const char* choices; };
+// step: the distance between two values the MPC can set (int and note parameters; 1 for the others)
+struct ControlDef { const char* id; const char* name; int kind; float min, max, def; const char* unit; const char* choices; int step; };
 constexpr ControlDef kControls[] = {
-    {"blip_vol", "Master Vol", 1, 0.0, 100.0, 50.0, "%", ""},
-    {"mode", "Mode", 3, 0, 2, 0, "", "Wait|Flow|Rhythm"},
-    {"tempo", "Tempo", 1, 20.0, 200.0, 100.0, "%", ""},
-    {"hands", "Hands", 3, 0, 2, 0, "", "Both|Right|Left"},
-    {"view", "View", 3, 0, 3, 0, "", "Halves|Page|Bars|Steps"},
-    {"play", "Play", 2, 0.0, 1.0, 0.0, "", ""},
-    {"restart", "Restart", 4, 0.0, 1.0, 0.0, "", ""},
-    {"loop", "Loop", 2, 0.0, 1.0, 0.0, "", ""},
-    {"loop_from", "Loop From", 1, 1.0, 999.0, 1.0, "", ""},
-    {"loop_bars", "Loop Bars", 1, 1.0, 32.0, 4.0, "", ""},
-    {"timing", "Timing", 1, 40.0, 400.0, 160.0, "ms", ""},
-    {"pitch_tol", "Pitch Tol", 3, 0, 2, 0, "", "Exact|Octave|Near"},
-    {"chord_tol", "Chords", 3, 0, 2, 0, "", "All|All-1|Any"},
-    {"hold", "Hold", 3, 0, 5, 2, "", "1/2 Beat|1 Beat|2 Beats|4 Beats|8 Beats|Forever"},
-    {"wrong", "Wrong Note", 3, 0, 2, 1, "", "Ignore|Count|Stop"},
-    {"count_in", "Count-in", 3, 0, 2, 1, "", "Off|1 Bar|2 Bars"},
-    {"metro", "Metronome", 3, 0, 2, 0, "", "Off|On|Accent"},
-    {"err_blip", "Error Sound", 2, 0.0, 1.0, 1.0, "", ""},
-    {"remind", "Remind", 3, 0, 3, 2, "", "Off|Every 5|Every 10|Every 20"},
-    {"remind_max", "Reminders", 1, 1.0, 20.0, 3.0, "", ""},
-    {"flash", "Red Flash", 2, 0.0, 1.0, 1.0, "", ""},
-    {"range_lo", "Range Lo", 5, 21.0, 108.0, 21.0, "", ""},
-    {"range_hi", "Range Hi", 5, 21.0, 108.0, 108.0, "", ""},
-    {"out_range", "Out Range", 3, 0, 2, 1, "", "Play|Skip|Hide"},
-    {"mask", "Mask", 3, 0, 2, 0, "", "Off|Played|Bar"},
-    {"names", "Note Names", 3, 0, 2, 2, "", "Off|Next|Next+Played"},
-    {"accomp", "Accomp", 3, 0, 2, 1, "", "Off|Other Hand|All"},
-    {"start_mode", "Start", 3, 0, 2, 0, "", "First Note|Play Button|MPC Play"},
-    {"split", "Split", 5, 36.0, 84.0, 60.0, "", ""},
-    {"transpose", "Transpose", 1, -12.0, 12.0, 0.0, "st", ""},
-    {"ramp", "Tempo Ramp", 3, 0, 3, 0, "", "Off|+2%|+5%|+10%"},
-    {"goal", "Goal", 1, 50.0, 100.0, 90.0, "%", ""},
-    {"folder", "Folder", 1, 0.0, 63.0, 0.0, "", ""},
-    {"scroll", "Scroll", 1, 0.0, 1999.0, 0.0, "", ""},
-    {"row", "Row", 3, 0, 7, 0, "", "1|2|3|4|5|6|7|8"},
-    {"load", "Load", 4, 0.0, 1.0, 0.0, "", ""},
-    {"sort", "Sort", 3, 0, 3, 0, "", "Name|Best %|Recent|Level"},
-    {"rescan", "Rescan", 4, 0.0, 1.0, 0.0, "", ""},
-    {"gen_key", "Key", 3, 0, 12, 0, "", "C|G|D|A|E|B|F#|Db|Ab|Eb|Bb|F|Random"},
-    {"gen_scale", "Scale", 3, 0, 11, 0, "", "Major|Minor|Dorian|Phrygian|Lydian|Mixolydian|Locrian|Harm Minor|Maj Pent|Min Pent|Blues|Chromatic"},
-    {"gen_rhythm", "Rhythm", 1, 1.0, 5.0, 2.0, "", ""},
-    {"gen_leaps", "Leaps", 1, 1.0, 5.0, 2.0, "", ""},
-    {"gen_hands", "Gen Hands", 3, 0, 2, 0, "", "Right|Left|Both"},
-    {"gen_bars", "Bars", 3, 0, 3, 1, "", "4|8|16|32"},
-    {"gen_meter", "Meter", 3, 0, 3, 0, "", "4/4|3/4|2/4|6/8"},
-    {"gen_range", "Gen Range", 3, 0, 3, 1, "", "5 Notes|Octave|2 Octaves|Wide"},
-    {"gen_lh", "LH Style", 3, 0, 3, 0, "", "Single|Intervals|Triads|Broken"},
-    {"gen_go", "Generate", 4, 0.0, 1.0, 0.0, "", ""},
-    {"gen_save", "Save", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn", "Linn Mode", 2, 0.0, 1.0, 0.0, "", ""},
-    {"linn_guide", "Guide", 3, 0, 3, 1, "", "Off|Next|Next+1|Fingered"},
-    {"linn_gcol", "Guide Clr", 3, 0, 10, 0, "", "Played|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink"},
-    {"linn_sect", "Light Bars", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn_scol", "Bars Clr", 3, 0, 9, 4, "", "Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink"},
-    {"linn_clear", "Clear Lights", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn_finger", "Fingering", 3, 0, 1, 0, "", "Off|Colours"},
-    {"linn_key", "Key Lights", 3, 0, 3, 0, "", "Off|MPC Key|Pad Scale|Piece Key"},
-    {"linn_kcol", "Key Clr", 3, 0, 9, 2, "", "Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink"},
-    {"linn_size", "Linn Size", 3, 0, 1, 0, "", "200 (25 col)|128 (16 col)"},
-    {"linn_rowoff", "Row Offset", 3, 0, 5, 0, "", "+5 (4ths)|+4|+3|+6|+7|Octave"},
-    {"linn_low", "Lowest Note", 5, 0.0, 72.0, 30.0, "", ""},
-    {"linn_ch", "Linn Ch", 1, 1.0, 16.0, 2.0, "", ""},
-    {"linn_left", "Left-Handed", 2, 0.0, 1.0, 0.0, "", ""},
-    {"linn_sync", "Read Key", 4, 0.0, 1.0, 0.0, "", ""},
-    {"note_colors", "Note Colors", 2, 0.0, 1.0, 1.0, "", ""},
-    {"feedback", "Feedback", 3, 0, 2, 2, "", "Off|Green|Green+Red"},
-    {"col_reset", "Reset Colors", 4, 0.0, 1.0, 0.0, "", ""},
-    {"col_c", "C", 3, 0, 17, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_cs", "C#", 3, 0, 17, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_d", "D", 3, 0, 17, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_ds", "D#", 3, 0, 17, 16, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_e", "E", 3, 0, 17, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_f", "F", 3, 0, 17, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_fs", "F#", 3, 0, 17, 17, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_g", "G", 3, 0, 17, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_gs", "G#", 3, 0, 17, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_a", "A", 3, 0, 17, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_as", "A#", 3, 0, 17, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"col_b", "B", 3, 0, 17, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon"},
-    {"snd_type", "Sound", 3, 0, 5, 0, "", "Wood|Soft Tick|Low Thud|Bell|Sine|Square"},
-    {"snd_vol", "Error Vol", 1, 0.0, 100.0, 30.0, "%", ""},
-    {"snd_pitch", "Pitch", 1, -24.0, 24.0, 0.0, "st", ""},
-    {"snd_attack", "Attack", 1, 0.0, 200.0, 2.0, "ms", ""},
-    {"snd_decay", "Decay", 1, 5.0, 2000.0, 160.0, "ms", ""},
-    {"snd_sustain", "Sustain", 1, 0.0, 100.0, 0.0, "%", ""},
-    {"snd_release", "Release", 1, 5.0, 2000.0, 60.0, "ms", ""},
-    {"snd_length", "Length", 1, 0.0, 2000.0, 0.0, "ms", ""},
-    {"snd_remind", "Remind Vol", 1, 0.0, 100.0, 50.0, "%", ""},
-    {"click_type", "Click", 3, 0, 2, 0, "", "Tick|Wood|Beep"},
-    {"click_vol", "Click Vol", 1, 0.0, 100.0, 40.0, "%", ""},
-    {"snd_test", "Test", 4, 0.0, 1.0, 0.0, "", ""},
-    {"listen", "Listen", 2, 0.0, 1.0, 0.0, "", ""},
-    {"listen_at", "Listen At", 3, 0, 6, 0, "", "Tempo|25%|50%|75%|100%|125%|150%"},
-    {"listen_hands", "Listen Hands", 3, 0, 1, 0, "", "Both|Practised"},
-    {"out_ch", "Out Ch", 1, 1.0, 16.0, 1.0, "", ""},
-    {"goto_bar", "Bar", 1, 0.0, 999.0, 1.0, "", ""},
-    {"goto_step", "Note", 1, 1.0, 9999.0, 1.0, "", ""},
-    {"bpm", "BPM", 1, 20.0, 300.0, 100.0, "", ""},
-    {"loop_to", "Loop To", 1, 1.0, 999.0, 4.0, "", ""},
-    {"auto_next", "Auto Next", 2, 0.0, 1.0, 1.0, "", ""},
-    {"piece", "Piece", 1, 1.0, 999.0, 1.0, "", ""},
-    {"piece_go", "Load Piece", 4, 0.0, 1.0, 0.0, "", ""},
-    {"select", "Select", 1, 0.0, 1999.0, 0.0, "", ""},
-    {"pick0", "Pick 1", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick1", "Pick 2", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick2", "Pick 3", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick3", "Pick 4", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick4", "Pick 5", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick5", "Pick 6", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick6", "Pick 7", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pick7", "Pick 8", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick0", "Queue 1", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick1", "Queue 2", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick2", "Queue 3", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick3", "Queue 4", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick4", "Queue 5", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick5", "Queue 6", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick6", "Queue 7", 4, 0.0, 1.0, 0.0, "", ""},
-    {"qpick7", "Queue 8", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pl_add", "Add To List", 4, 0.0, 1.0, 0.0, "", ""},
-    {"pl_remove", "Remove", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn_port", "Linn Port", 3, 0, 2, 0, "", "USB|MPC Out A|MPC Out B"},
-    {"linn_test", "Test Lights", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn_restore", "Restore", 3, 0, 4, 0, "", "Instrument|Note Colors|Pattern 1|Pattern 2|Pattern 3"},
-    {"qpanel", "Piece List", 2, 0.0, 1.0, 0.0, "", ""},
-    {"loop_set_from", "Set From", 4, 0.0, 1.0, 0.0, "", ""},
-    {"loop_set_to", "Set To", 4, 0.0, 1.0, 0.0, "", ""},
-    {"linn_fit", "Fit Range", 3, 0, 2, 2, "", "Off|Skip|Fold"},
-    {"linn_gcol2", "After Clr", 3, 0, 10, 0, "", "Played|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink"},
-    {"linn_oct", "Linn Octave", 1, -5.0, 5.0, 0.0, "", ""},
-    {"linn_semi", "Linn Transp", 1, -7.0, 7.0, 0.0, "st", ""},
-    {"linn_follow", "Read Transp", 2, 0.0, 1.0, 1.0, "", ""},
+    {"blip_vol", "Master Vol", 1, 0.0, 100.0, 50.0, "%", "", 1},
+    {"mode", "Mode", 3, 0, 2, 0, "", "Wait|Flow|Rhythm", 1},
+    {"tempo", "Tempo", 1, 20.0, 200.0, 100.0, "%", "", 1},
+    {"hands", "Hands", 3, 0, 2, 0, "", "Both|Right|Left", 1},
+    {"view", "View", 3, 0, 3, 0, "", "Halves|Page|Bars|Steps", 1},
+    {"play", "Play", 2, 0.0, 1.0, 0.0, "", "", 1},
+    {"restart", "Restart", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"loop", "Loop", 2, 0.0, 1.0, 0.0, "", "", 1},
+    {"loop_from", "Loop From", 1, 1.0, 999.0, 1.0, "", "", 1},
+    {"loop_bars", "Loop Bars", 1, 1.0, 32.0, 4.0, "", "", 1},
+    {"timing", "Timing", 1, 40.0, 400.0, 160.0, "ms", "", 5},
+    {"pitch_tol", "Pitch Tol", 3, 0, 2, 0, "", "Exact|Octave|Near", 1},
+    {"chord_tol", "Chords", 3, 0, 2, 0, "", "All|All-1|Any", 1},
+    {"hold", "Hold", 3, 0, 5, 2, "", "1/2 Beat|1 Beat|2 Beats|4 Beats|8 Beats|Forever", 1},
+    {"wrong", "Wrong Note", 3, 0, 2, 1, "", "Ignore|Count|Stop", 1},
+    {"count_in", "Count-in", 3, 0, 2, 1, "", "Off|1 Bar|2 Bars", 1},
+    {"metro", "Metronome", 3, 0, 2, 0, "", "Off|On|Accent", 1},
+    {"err_blip", "Error Sound", 2, 0.0, 1.0, 1.0, "", "", 1},
+    {"remind", "Remind", 3, 0, 3, 2, "", "Off|Every 5|Every 10|Every 20", 1},
+    {"remind_max", "Reminders", 1, 1.0, 20.0, 3.0, "", "", 1},
+    {"flash", "Red Flash", 2, 0.0, 1.0, 1.0, "", "", 1},
+    {"range_lo", "Range Lo", 5, 21.0, 108.0, 21.0, "", "", 1},
+    {"range_hi", "Range Hi", 5, 21.0, 108.0, 108.0, "", "", 1},
+    {"out_range", "Out Range", 3, 0, 2, 1, "", "Play|Skip|Hide", 1},
+    {"mask", "Mask", 3, 0, 2, 0, "", "Off|Played|Bar", 1},
+    {"names", "Note Names", 3, 0, 2, 2, "", "Off|Next|Next+Played", 1},
+    {"accomp", "Accomp", 3, 0, 2, 1, "", "Off|Other Hand|All", 1},
+    {"start_mode", "Start", 3, 0, 2, 0, "", "First Note|Play Button|MPC Play", 1},
+    {"split", "Split", 5, 36.0, 84.0, 60.0, "", "", 1},
+    {"transpose", "Transpose", 1, -12.0, 12.0, 0.0, "st", "", 1},
+    {"ramp", "Tempo Ramp", 3, 0, 3, 0, "", "Off|+2%|+5%|+10%", 1},
+    {"goal", "Goal", 1, 50.0, 100.0, 90.0, "%", "", 1},
+    {"folder", "Folder", 1, 0.0, 63.0, 0.0, "", "", 1},
+    {"scroll", "Scroll", 1, 0.0, 1999.0, 0.0, "", "", 1},
+    {"row", "Row", 3, 0, 7, 0, "", "1|2|3|4|5|6|7|8", 1},
+    {"load", "Load", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"sort", "Sort", 3, 0, 3, 0, "", "Name|Best %|Recent|Level", 1},
+    {"rescan", "Rescan", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"gen_key", "Key", 3, 0, 12, 0, "", "C|G|D|A|E|B|F#|Db|Ab|Eb|Bb|F|Random", 1},
+    {"gen_scale", "Scale", 3, 0, 11, 0, "", "Major|Minor|Dorian|Phrygian|Lydian|Mixolydian|Locrian|Harm Minor|Maj Pent|Min Pent|Blues|Chromatic", 1},
+    {"gen_rhythm", "Rhythm", 1, 1.0, 5.0, 2.0, "", "", 1},
+    {"gen_leaps", "Leaps", 1, 1.0, 5.0, 2.0, "", "", 1},
+    {"gen_hands", "Gen Hands", 3, 0, 2, 0, "", "Right|Left|Both", 1},
+    {"gen_bars", "Bars", 3, 0, 3, 1, "", "4|8|16|32", 1},
+    {"gen_meter", "Meter", 3, 0, 3, 0, "", "4/4|3/4|2/4|6/8", 1},
+    {"gen_range", "Gen Range", 3, 0, 3, 1, "", "5 Notes|Octave|2 Octaves|Wide", 1},
+    {"gen_lh", "LH Style", 3, 0, 3, 0, "", "Single|Intervals|Triads|Broken", 1},
+    {"gen_go", "Generate", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"gen_save", "Save", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn", "Linn Mode", 2, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_guide", "Guide", 3, 0, 3, 1, "", "Off|Next|Next+1|Fingered", 1},
+    {"linn_gcol", "Guide Clr", 3, 0, 10, 0, "", "Played|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink", 1},
+    {"linn_sect", "Light Bars", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_scol", "Bars Clr", 3, 0, 9, 4, "", "Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink", 1},
+    {"linn_clear", "Clear Lights", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_finger", "Fingering", 3, 0, 1, 0, "", "Off|Colours", 1},
+    {"linn_key", "Key Lights", 3, 0, 3, 0, "", "Off|MPC Key|Pad Scale|Piece Key", 1},
+    {"linn_kcol", "Key Clr", 3, 0, 9, 2, "", "Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink", 1},
+    {"linn_size", "Linn Size", 3, 0, 1, 0, "", "200 (25 col)|128 (16 col)", 1},
+    {"linn_rowoff", "Row Offset", 3, 0, 5, 0, "", "+5 (4ths)|+4|+3|+6|+7|Octave", 1},
+    {"linn_low", "Lowest Note", 5, 0.0, 72.0, 30.0, "", "", 1},
+    {"linn_ch", "Linn Ch", 1, 1.0, 16.0, 2.0, "", "", 1},
+    {"linn_left", "Left-Handed", 2, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_sync", "Read Key", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"note_colors", "Note Colors", 2, 0.0, 1.0, 1.0, "", "", 1},
+    {"feedback", "Feedback", 3, 0, 2, 2, "", "Off|Green|Green+Red", 1},
+    {"col_reset", "Reset Colors", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"col_c", "C", 3, 0, 17, 4, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_cs", "C#", 3, 0, 17, 11, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_d", "D", 3, 0, 17, 5, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_ds", "D#", 3, 0, 17, 16, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_e", "E", 3, 0, 17, 10, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_f", "F", 3, 0, 17, 6, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_fs", "F#", 3, 0, 17, 17, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_g", "G", 3, 0, 17, 7, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_gs", "G#", 3, 0, 17, 14, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_a", "A", 3, 0, 17, 2, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_as", "A#", 3, 0, 17, 15, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"col_b", "B", 3, 0, 17, 8, "", "Off|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink|Azure|Violet|Orchid|Cream|Amber|Navy|Salmon", 1},
+    {"snd_type", "Sound", 3, 0, 5, 0, "", "Wood|Soft Tick|Low Thud|Bell|Sine|Square", 1},
+    {"snd_vol", "Error Vol", 1, 0.0, 100.0, 30.0, "%", "", 1},
+    {"snd_pitch", "Pitch", 1, -24.0, 24.0, 0.0, "st", "", 1},
+    {"snd_attack", "Attack", 1, 0.0, 200.0, 2.0, "ms", "", 1},
+    {"snd_decay", "Decay", 1, 5.0, 2000.0, 160.0, "ms", "", 5},
+    {"snd_sustain", "Sustain", 1, 0.0, 100.0, 0.0, "%", "", 1},
+    {"snd_release", "Release", 1, 5.0, 2000.0, 60.0, "ms", "", 5},
+    {"snd_length", "Length", 1, 0.0, 2000.0, 0.0, "ms", "", 5},
+    {"snd_remind", "Remind Vol", 1, 0.0, 100.0, 50.0, "%", "", 1},
+    {"click_type", "Click", 3, 0, 2, 0, "", "Tick|Wood|Beep", 1},
+    {"click_vol", "Click Vol", 1, 0.0, 100.0, 40.0, "%", "", 1},
+    {"snd_test", "Test", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"listen", "Listen", 2, 0.0, 1.0, 0.0, "", "", 1},
+    {"listen_at", "Listen At", 3, 0, 6, 0, "", "Tempo|25%|50%|75%|100%|125%|150%", 1},
+    {"listen_hands", "Listen Hands", 3, 0, 1, 0, "", "Both|Practised", 1},
+    {"out_ch", "Out Ch", 1, 1.0, 16.0, 1.0, "", "", 1},
+    {"goto_bar", "Bar", 1, 0.0, 999.0, 1.0, "", "", 1},
+    {"goto_step", "Note", 1, 1.0, 9999.0, 1.0, "", "", 1},
+    {"bpm", "BPM", 1, 20.0, 300.0, 100.0, "", "", 1},
+    {"loop_to", "Loop To", 1, 1.0, 999.0, 4.0, "", "", 1},
+    {"auto_next", "Auto Next", 2, 0.0, 1.0, 1.0, "", "", 1},
+    {"piece", "Piece", 1, 1.0, 999.0, 1.0, "", "", 1},
+    {"piece_go", "Load Piece", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"select", "Select", 1, 0.0, 1999.0, 0.0, "", "", 1},
+    {"pick0", "Pick 1", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick1", "Pick 2", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick2", "Pick 3", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick3", "Pick 4", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick4", "Pick 5", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick5", "Pick 6", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick6", "Pick 7", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pick7", "Pick 8", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick0", "Queue 1", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick1", "Queue 2", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick2", "Queue 3", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick3", "Queue 4", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick4", "Queue 5", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick5", "Queue 6", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick6", "Queue 7", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"qpick7", "Queue 8", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pl_add", "Add To List", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"pl_remove", "Remove", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_port", "Linn Port", 3, 0, 2, 0, "", "USB|MPC Out A|MPC Out B", 1},
+    {"linn_test", "Test Lights", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_restore", "Restore", 3, 0, 4, 0, "", "Instrument|Note Colors|Pattern 1|Pattern 2|Pattern 3", 1},
+    {"qpanel", "Piece List", 2, 0.0, 1.0, 0.0, "", "", 1},
+    {"loop_set_from", "Set From", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"loop_set_to", "Set To", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"linn_fit", "Fit Range", 3, 0, 2, 2, "", "Off|Skip|Fold", 1},
+    {"linn_gcol2", "After Clr", 3, 0, 10, 0, "", "Played|Red|Yellow|Green|Cyan|Blue|Magenta|White|Orange|Lime|Pink", 1},
+    {"linn_oct", "Linn Octave", 1, -5.0, 5.0, 0.0, "", "", 1},
+    {"linn_semi", "Linn Transp", 1, -7.0, 7.0, 0.0, "st", "", 1},
+    {"linn_follow", "Read Transp", 2, 0.0, 1.0, 1.0, "", "", 1},
+    {"bar_back", "Bar Back", 4, 0.0, 1.0, 0.0, "", "", 1},
+    {"bar_fwd", "Bar Fwd", 4, 0.0, 1.0, 0.0, "", "", 1},
 };
-constexpr int kNumControls = 132;
+constexpr int kNumControls = 134;
 enum ControlId {
     P_BLIP_VOL = 0,
     P_MODE = 1,
@@ -271,8 +274,10 @@ enum ControlId {
     P_LINN_OCT = 129,
     P_LINN_SEMI = 130,
     P_LINN_FOLLOW = 131,
+    P_BAR_BACK = 132,
+    P_BAR_FWD = 133,
 };
-constexpr int kTextBase = 132, kNumTexts = 31;
+constexpr int kTextBase = 134, kNumTexts = 31;
 enum TextId {
     T_TITLE = 0,
     T_FOLDER_NAME = 1,
@@ -306,70 +311,70 @@ enum TextId {
     T_Q7 = 29,
     T_QINFO = 30,
 };
-constexpr int kD_cell = 163, kN_cell = 660;
-constexpr int kD_mark = 823, kN_mark = 660;  // 153 frames
+constexpr int kD_cell = 165, kN_cell = 660;
+constexpr int kD_mark = 825, kN_mark = 660;  // 153 frames
 constexpr int kF_mark = 153;
-constexpr int kD_overlay = 1483, kN_overlay = 20;  // 6 frames
+constexpr int kD_overlay = 1485, kN_overlay = 20;  // 6 frames
 constexpr int kF_overlay = 6;
-constexpr int kD_mask = 1503, kN_mask = 2;  // 3 frames
+constexpr int kD_mask = 1505, kN_mask = 2;  // 3 frames
 constexpr int kF_mask = 3;
-constexpr int kD_barline = 1505, kN_barline = 21;  // 6 frames
+constexpr int kD_barline = 1507, kN_barline = 21;  // 6 frames
 constexpr int kF_barline = 6;
-constexpr int kD_keysig = 1526, kN_keysig = 1;  // 15 frames
+constexpr int kD_keysig = 1528, kN_keysig = 1;  // 15 frames
 constexpr int kF_keysig = 15;
-constexpr int kD_timesig = 1527, kN_timesig = 1;  // 15 frames
+constexpr int kD_timesig = 1529, kN_timesig = 1;  // 15 frames
 constexpr int kF_timesig = 15;
-constexpr int kD_flash = 1528, kN_flash = 1;  // 3 frames
+constexpr int kD_flash = 1530, kN_flash = 1;  // 3 frames
 constexpr int kF_flash = 3;
-constexpr int kD_status = 1529, kN_status = 1;  // 11 frames
+constexpr int kD_status = 1531, kN_status = 1;  // 11 frames
 constexpr int kF_status = 11;
-constexpr int kD_handicon = 1530, kN_handicon = 1;  // 3 frames
+constexpr int kD_handicon = 1532, kN_handicon = 1;  // 3 frames
 constexpr int kF_handicon = 3;
-constexpr int kD_d_bar = 1531, kN_d_bar = 3;  // 11 frames
+constexpr int kD_d_bar = 1533, kN_d_bar = 3;  // 11 frames
 constexpr int kF_d_bar = 11;
-constexpr int kD_d_bars = 1534, kN_d_bars = 3;  // 11 frames
+constexpr int kD_d_bars = 1536, kN_d_bars = 3;  // 11 frames
 constexpr int kF_d_bars = 11;
-constexpr int kD_d_acc = 1537, kN_d_acc = 3;  // 11 frames
+constexpr int kD_d_acc = 1539, kN_d_acc = 3;  // 11 frames
 constexpr int kF_d_acc = 11;
-constexpr int kD_d_bpm = 1540, kN_d_bpm = 3;  // 11 frames
+constexpr int kD_d_bpm = 1542, kN_d_bpm = 3;  // 11 frames
 constexpr int kF_d_bpm = 11;
-constexpr int kD_d_err = 1543, kN_d_err = 3;  // 11 frames
+constexpr int kD_d_err = 1545, kN_d_err = 3;  // 11 frames
 constexpr int kF_d_err = 11;
-constexpr int kD_nextname = 1546, kN_nextname = 1;  // 177 frames
+constexpr int kD_nextname = 1548, kN_nextname = 1;  // 177 frames
 constexpr int kF_nextname = 177;
-constexpr int kD_playedname = 1547, kN_playedname = 1;  // 177 frames
+constexpr int kD_playedname = 1549, kN_playedname = 1;  // 177 frames
 constexpr int kF_playedname = 177;
-constexpr int kD_finger = 1548, kN_finger = 2;  // 6 frames
+constexpr int kD_finger = 1550, kN_finger = 2;  // 6 frames
 constexpr int kF_finger = 6;
-constexpr int kD_mnum = 1550, kN_mnum = 6;  // 11 frames
+constexpr int kD_mnum = 1552, kN_mnum = 6;  // 11 frames
 constexpr int kF_mnum = 11;
-constexpr int kD_progress = 1556, kN_progress = 1;
-constexpr int kD_linnstate = 1557, kN_linnstate = 1;  // 4 frames
+constexpr int kD_progress = 1558, kN_progress = 1;
+constexpr int kD_linnstate = 1559, kN_linnstate = 1;  // 4 frames
 constexpr int kF_linnstate = 4;
-constexpr int kD_statbar = 1558, kN_statbar = 16;  // 21 frames
+constexpr int kD_statbar = 1560, kN_statbar = 16;  // 21 frames
 constexpr int kF_statbar = 21;
-constexpr int kD_d_best = 1574, kN_d_best = 3;  // 11 frames
+constexpr int kD_d_best = 1576, kN_d_best = 3;  // 11 frames
 constexpr int kF_d_best = 11;
-constexpr int kD_d_last = 1577, kN_d_last = 3;  // 11 frames
+constexpr int kD_d_last = 1579, kN_d_last = 3;  // 11 frames
 constexpr int kF_d_last = 11;
-constexpr int kD_d_passes = 1580, kN_d_passes = 3;  // 11 frames
+constexpr int kD_d_passes = 1582, kN_d_passes = 3;  // 11 frames
 constexpr int kF_d_passes = 11;
-constexpr int kD_d_minutes = 1583, kN_d_minutes = 4;  // 11 frames
+constexpr int kD_d_minutes = 1585, kN_d_minutes = 4;  // 11 frames
 constexpr int kF_d_minutes = 11;
-constexpr int kD_d_streak = 1587, kN_d_streak = 3;  // 11 frames
+constexpr int kD_d_streak = 1589, kN_d_streak = 3;  // 11 frames
 constexpr int kF_d_streak = 11;
-constexpr int kD_nextname_lh = 1590, kN_nextname_lh = 1;  // 177 frames
+constexpr int kD_nextname_lh = 1592, kN_nextname_lh = 1;  // 177 frames
 constexpr int kF_nextname_lh = 177;
-constexpr int kD_swatch = 1591, kN_swatch = 12;  // 18 frames
+constexpr int kD_swatch = 1593, kN_swatch = 12;  // 18 frames
 constexpr int kF_swatch = 18;
-constexpr int kD_ro = 1603, kN_ro = 37;
-constexpr int kD_rowsel = 1640, kN_rowsel = 8;  // 2 frames
+constexpr int kD_ro = 1605, kN_ro = 37;
+constexpr int kD_rowsel = 1642, kN_rowsel = 8;  // 2 frames
 constexpr int kF_rowsel = 2;
-constexpr int kD_qsel = 1648, kN_qsel = 8;  // 3 frames
+constexpr int kD_qsel = 1650, kN_qsel = 8;  // 3 frames
 constexpr int kF_qsel = 3;
 // readouts: display parameter kD_ro + i mirrors control kRoControl[i] (value - min), kRoFrames[i] frames
 constexpr int kRoControl[37] = {P_MODE, P_HANDS, P_VIEW, P_PITCH_TOL, P_CHORD_TOL, P_WRONG, P_COUNT_IN, P_METRO, P_ERR_BLIP, P_FLASH, P_OUT_RANGE, P_MASK, P_NAMES, P_ACCOMP, P_START_MODE, P_SORT, P_GEN_RHYTHM, P_GEN_LEAPS, P_GEN_HANDS, P_GEN_RANGE, P_GEN_LH, P_LINN, P_LINN_GUIDE, P_LINN_FINGER, P_LINN_KEY, P_LINN_SIZE, P_LINN_LEFT, P_NOTE_COLORS, P_FEEDBACK, P_SND_TYPE, P_CLICK_TYPE, P_LISTEN_HANDS, P_AUTO_NEXT, P_LINN_PORT, P_LINN_RESTORE, P_LINN_FIT, P_LINN_FOLLOW};
 constexpr int kRoFrames[37] = {3, 3, 4, 3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 3, 4, 4, 2, 4, 2, 4, 2, 2, 2, 3, 6, 3, 2, 2, 3, 5, 3, 2};
-constexpr int kDisplayBase = 163;
-constexpr int kNumParams = 1656;
+constexpr int kDisplayBase = 165;
+constexpr int kNumParams = 1658;
 }} // namespace sr::gen

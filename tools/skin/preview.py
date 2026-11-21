@@ -71,7 +71,7 @@ def compose(dump, theme, skin_dir):
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    theme = "day"
+    theme = "night"
     skin = "/tmp/sr_skin_preview"
     for i, a in enumerate(sys.argv):
         if a == "--theme": theme = sys.argv[i + 1]

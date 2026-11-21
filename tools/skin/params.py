@@ -137,6 +137,9 @@ CONTROL = [
     ("linn_oct",   "Linn Octave", "int",    (-5, 5, 0), ""),
     ("linn_semi",  "Linn Transp", "int",    (-7, 7, 0), "st"),
     ("linn_follow","Read Transp", "bool",   (0, 1, 1), ""),
+    # 0.6.5: the transport bar on PLAY: a bar back / forward, for LISTEN or the practice cursor
+    ("bar_back",   "Bar Back",    "trigger",(0, 1, 0), ""),
+    ("bar_fwd",    "Bar Fwd",     "trigger",(0, 1, 0), ""),
 ]
 
 TEXTS = ["title", "folder_name", "row0", "row1", "row2", "row3", "row4", "row5", "row6", "row7",
@@ -214,6 +217,60 @@ def build_index():
 
 INDEX = build_index()
 
+# ---------------------------------------------------------------------------------------------
+# Steps (0.6.5). The data wheel, the Q-Links and the big knob move a number one value at a time
+# because the skin lists every value of each int and note parameter (replacementStrings: Akai's
+# documented way to give the MPC discrete steps). Until 0.6.0 the plugin guessed which moves were
+# wheel clicks (a hundredth of the range), and any move it did not recognise, such as a fast turn,
+# passed through as a jump. The long time ranges step by 5 ms so a turn covers them. The texts
+# are the ones the plugin's formatValue() shows.
+# ---------------------------------------------------------------------------------------------
+STEP = {"timing": 5, "snd_decay": 5, "snd_release": 5, "snd_length": 5}
+SHARPS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+def note_text(n):
+    return "-" if n < 0 or n > 127 else "%s%d" % (SHARPS[n % 12], n // 12 - 1)
+
+def step_values(pid):
+    """Every value the MPC can give int or note parameter pid, in order."""
+    (_, _, kind, (mn, mx, df), _) = next(c for c in CONTROL if c[0] == pid)
+    st = STEP.get(pid, 1)
+    assert (mx - mn) % st == 0 and (df - mn) % st == 0, "%s: range and default must sit on the %d grid" % (pid, st)
+    return list(range(int(mn), int(mx) + 1, st))
+
+def value_text(pid, v):
+    """What the plugin shows for value v of an int or note parameter (formatValue in SightReader.cpp)."""
+    (_, _, kind, _, unit) = next(c for c in CONTROL if c[0] == pid)
+    if kind == NOTE:
+        return note_text(v)
+    if pid in ("loop_from", "loop_to", "goto_bar"):
+        return "Bar %d" % v
+    if pid == "loop_bars":
+        return "1 bar" if v == 1 else "%d bars" % v
+    if pid == "bpm":
+        return "%d BPM" % v
+    if pid == "piece":
+        return "Piece %d" % v
+    if pid == "select":
+        return "File %d" % (v + 1)
+    if pid == "folder":
+        return "Folder %d" % (v + 1)
+    if pid in ("out_ch", "linn_ch"):
+        return "Ch %d" % v
+    if pid == "linn_oct":
+        return "%+d oct" % v if v else "0 oct"
+    if pid in ("gen_rhythm", "gen_leaps"):
+        return "Level %d" % v
+    if pid == "remind_max":
+        return "1 time" if v == 1 else "%d times" % v
+    if unit == "%":
+        return "%d%%" % v
+    if unit == "st":
+        return "%+d st" % v if v else "0 st"
+    if unit:
+        return "%d %s" % (v, unit)
+    return "%d" % v
+
 def write_cpp_header(path):
     L = []
     w = L.append
@@ -221,16 +278,17 @@ def write_cpp_header(path):
     w("#pragma once")
     w("namespace sr { namespace gen {")
     w("enum ParamKind { kFloat = 0, kInt = 1, kBool = 2, kChoice = 3, kTrigger = 4, kNote = 5 };")
-    w("struct ControlDef { const char* id; const char* name; int kind; float min, max, def; const char* unit; const char* choices; };")
+    w("// step: the distance between two values the MPC can set (int and note parameters; 1 for the others)")
+    w("struct ControlDef { const char* id; const char* name; int kind; float min, max, def; const char* unit; const char* choices; int step; };")
     w("constexpr ControlDef kControls[] = {")
     for (pid, name, kind, rng, unit) in CONTROL:
         k = {"float": 0, "int": 1, "bool": 2, "choice": 3, "trigger": 4, NOTE: 5}[kind]
         if kind == "choice":
             choices, d = rng
-            w('    {"%s", "%s", %d, 0, %d, %d, "%s", "%s"},' % (pid, name, k, len(choices) - 1, d, unit, "|".join(choices)))
+            w('    {"%s", "%s", %d, 0, %d, %d, "%s", "%s", 1},' % (pid, name, k, len(choices) - 1, d, unit, "|".join(choices)))
         else:
             mn, mx, d = rng
-            w('    {"%s", "%s", %d, %s, %s, %s, "%s", ""},' % (pid, name, k, float(mn), float(mx), float(d), unit))
+            w('    {"%s", "%s", %d, %s, %s, %s, "%s", "", %d},' % (pid, name, k, float(mn), float(mx), float(d), unit, STEP.get(pid, 1)))
     w("};")
     w("constexpr int kNumControls = %d;" % len(CONTROL))
     w("enum ControlId {")

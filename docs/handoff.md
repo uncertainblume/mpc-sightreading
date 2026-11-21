@@ -5,6 +5,27 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 
 ## Start here (next session)
 
+**0.6.5 (2026-11-21)**, from the user's notes on 0.6.0:
+- **The jog wheel** "jumped all over the place". Every number now has `replacementStrings` (its
+  list of values), so the MPC steps one value per click itself. `hostStep` only corrects a click
+  made from a value the MPC had not caught up with, and presets count as loads. See design.md.
+  Ask the user to try:
+  - slow and fast turns on Tempo, Timing (5 ms steps), a channel, and Bar while playing;
+  - the LOAD list;
+  - Q-Links 5-8 on PLAY;
+  - the big knob (double-tap).
+
+  If something still jumps, ask which setting and how it was turned.
+- **The transport bar** on PLAY (|< << LISTEN >> PLAY LOOP). The user could not find 0.5.5's
+  transport (LISTEN pause, Bar-field seek).
+- **LINN third; PLAY dark only.** The user chose dark only over a SETUP switch, which would have
+  doubled PLAY's pictures. How to bring LIGHT back: `WITH_LIGHT` in gen_skin.py (design.md).
+- **Loader: Add from a link.** A .mid, a zip of them, or a page to pick links from.
+  - GitHub, Drive and Dropbox share links are rewritten to the file itself.
+  - It downloads on the computer, with an honest User-Agent and no robots bypass.
+  - Sites that refuse get a plain message.
+- The user confirmed the 0.6.0 loader talks to their MPC.
+
 **Next version (planned, not started; wait for the user's go):** **Load by URL** in the MIDI
 loader. The user tried 0.6.0: the loader talks to their MPC properly, and they would like to paste
 a link and have the piece added. Points to settle when building it:

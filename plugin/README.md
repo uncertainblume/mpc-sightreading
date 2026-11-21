@@ -1,4 +1,4 @@
-# Sight Reader 0.6.0 (Practice Tools)
+# Sight Reader 0.6.5 (Practice Tools)
 
 A sight-reading trainer for the MPC: a grand staff on the plugin page, MIDI files and generated
 exercises, Wait / Flow / Rhythm practice with adjustable slack, progress tracking, and
@@ -13,8 +13,7 @@ External Plugin Support. Copy the folder "Practice Tools - VST - Sight Reader" i
 on the MPC's internal drive, restart, and load it on a plugin track whose MIDI input is your
 controller (monitor Merge). Keep your instrument on another track listening to the same input.
 
-Pages: PLAY (press its key again for LIGHT, the same page in a day theme), LOAD, GEN, SETUP,
-MORE, SOUND, COLOR, LINN (press again for LAYOUT), STATS. Your library:
+Pages: PLAY, LOAD, LINN (press again for LAYOUT), GEN, SETUP, MORE, SOUND, COLOR, STATS. Your library:
 SightReader/Library/<folder>/*.mid on the same drive. On LOAD, turn the data wheel and push it to
 load; tap the title on PLAY for the folder's piece list. Tap Bar, Note or BPM in PLAY's header to
 move with the data wheel. LISTEN plays the piece to any instrument track whose MIDI input is

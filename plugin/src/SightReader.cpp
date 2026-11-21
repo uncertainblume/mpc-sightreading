@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 600;   // 0.6.0
+constexpr int kVersion = 605;   // 0.6.5
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -283,8 +283,8 @@ public:
         texts_[gen::T_TITLE] = "Sight Reader";
         texts_[gen::T_MESSAGE] = "LOAD a piece or GEN an exercise";
         places_.locate(mpc::pluginFolder());
-        // the data wheel's first click steps from the default (not from nothing: 0.4.0 jumped)
-        for (int i = 0; i < gen::kNumControls; ++i) { lastInt_[i] = (int)std::lround(get(i)); lastNorm_[i] = lastHostNorm_[i] = getNormalised(i); }
+        // what the plugin shows and what the MPC last sent start at the defaults
+        for (int i = 0; i < gen::kNumControls; ++i) { const int v = (int)std::lround(get(i)); lastInt_[i].store(v); lastHostInt_[i].store(v); }
         worker_ = std::thread([this] { workerLoop(); });
     }
 
@@ -320,7 +320,7 @@ public:
         if (inParamChange_) return;
         if (index >= gen::kDisplayBase) return;
         if (index >= gen::kTextBase) return;
-        if (gen::kControls[index].kind == gen::kInt || gen::kControls[index].kind == gen::kNote) nudge(index);
+        if (gen::kControls[index].kind == gen::kInt || gen::kControls[index].kind == gen::kNote) hostStep(index);
         switch (index)
         {
             case gen::P_RESTART: if (plain >= 0.5f) trig_restart_.store(true); break;
@@ -338,6 +338,8 @@ public:
             case gen::P_SELECT: listSrc_.store(2); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
             case gen::P_LOOP_FROM: case gen::P_LOOP_TO: case gen::P_LOOP_BARS: if (!loadingState_.load()) loopRule(index); break;
             case gen::P_LOOP_SET_FROM: if (plain >= 0.5f) trig_setfrom_.store(true); break;
+            case gen::P_BAR_BACK: if (plain >= 0.5f) barStep_.store(-1); break;
+            case gen::P_BAR_FWD: if (plain >= 0.5f) barStep_.store(1); break;
             case gen::P_LOOP_SET_TO: if (plain >= 0.5f) trig_setto_.store(true); break;
             case gen::P_GOTO_BAR: case gen::P_GOTO_STEP:
                 if (!loadingState_.load()) locateReq_.store(index == gen::P_GOTO_BAR ? 1 : 2); break;
@@ -366,18 +368,18 @@ public:
         }
     }
 
-    // The entry point marks a state load (effSetChunk), during which values are restored as saved.
+    // The entry point marks a state load (effSetChunk) and a preset (effSetProgram), during which
+    // values are taken as they come.
     void setLoadingState(bool on) { loadingState_.store(on); }
     std::mutex& stateMutex() { return stateMx_; }
-    // Writes one of our own parameters from inside the plugin, keeping nudge()'s memory in step
-    // so the next data-wheel move goes on from the value shown.
+    // Writes one of our own parameters from inside the plugin, keeping hostStep()'s memory in step
+    // so the next data-wheel move goes on from the value shown, and tells the MPC.
     void setTracked(int index, float plain)
     {
         inParamChange_ = true;
         set(index, plain);
         inParamChange_ = false;
-        lastInt_[index] = (int)std::lround(get(index));
-        lastNorm_[index] = getNormalised(index);
+        if (index < gen::kNumControls) lastInt_[index].store((int)std::lround(get(index)));
         needNotify_[index].store(true);
     }
 
@@ -408,61 +410,34 @@ public:
         if (bars != (int)std::lround(get(gen::P_LOOP_BARS))) setTracked(gen::P_LOOP_BARS, (float)bars);
     }
 
-    // Q-Link and data-wheel moves arrive as the read-back value plus 1/128 (wheel 1/100) of the
-    // range; on a long list that skips entries. A small move counts as one step.
-    // The MPC's data wheel moves a number by a hundredth of its range per click (the "coarse"
-    // increment, Akai's ui-reference 3.3), which lands on uneven values: Tempo 100, 102, 104,
-    // 105..., a 1-16 channel needing several clicks per step. A move of that size is taken as one
-    // step from where the value was: one unit, or a round number of milliseconds on the long time
-    // ranges. Whether the MPC adds its hundredth to the value it reads back or to the one it last
-    // sent, the click is recognised. Other moves (a knob dragged, the big editor, a Q-Link turned
-    // fast) are taken as they come.
-    static bool wheelClick(float d) { float a = std::fabs(d); return a > 0.0093f && a < 0.0107f; }
-    int wheelQuantum(int index) const
+    // The data wheel, the Q-Links and the big knob (0.6.5). The skin lists every value of each
+    // number (params.py STEP), so the MPC itself moves one step per click: what it sends is taken
+    // as it comes. The one exception is a value the plugin moved itself (Bar and Note follow the
+    // cursor, Tempo and BPM each other, the loop's three fields each other): if the MPC has not
+    // caught up, its click is a step from the old value, far from the one shown. Then the same
+    // step is made from the value shown. Until 0.6.0 the plugin guessed which moves were clicks (a
+    // hundredth of the range) and passed others through, so a fast turn jumped.
+    void hostStep(int index)
     {
-        const gen::ControlDef& c = gen::kControls[index];
-        if (c.kind != gen::kInt || std::strcmp(c.unit, "ms") != 0) return 1;
-        const double raw = (c.max - c.min) / 100.0;
-        static const int nice[] = {1, 2, 5, 10, 20, 50, 100};
-        int best = 1;
-        for (int q : nice) if (std::fabs(q - raw) < std::fabs(best - raw)) best = q;
-        return best;
-    }
-    void nudge(int index)
-    {
-        const float norm = getNormalised(index);
-        if (loadingState_.load())
-        {   // a project or preset loading: take the value as it comes
-            lastInt_[index] = (int)std::lround(get(index));
-            lastNorm_[index] = lastHostNorm_[index] = norm;
-            return;
-        }
-        const float dOurs = norm - lastNorm_[index], dHost = norm - lastHostNorm_[index];
-        lastHostNorm_[index] = norm;
-        const int prev = lastInt_[index];
-        int now = (int)std::lround(get(index));
-        // a click at either end of the range is cut short by the clamp
-        auto clipped = [norm](float d) { return std::fabs(d) > 1e-6f && std::fabs(d) < 0.0107f && ((norm <= 1e-4f && d < 0) || (norm >= 1.0f - 1e-4f && d > 0)); };
-        const bool oursClick = wheelClick(dOurs) || clipped(dOurs), hostClick = wheelClick(dHost) || clipped(dHost);
-        if (oursClick || hostClick)
+        const int now = (int)std::lround(get(index));
+        if (loadingState_.load()) { lastInt_[index].store(now); lastHostInt_[index].store(now); return; }
+        const int shown = lastInt_[index].load(), before = lastHostInt_[index].exchange(now);
+        const int step = std::max(1, gen::kControls[index].step), moved = now - before;
+        if (std::abs(now - shown) > 3 * step && moved != 0 && std::abs(moved) <= 8 * step)
         {
             const gen::ControlDef& c = gen::kControls[index];
-            const float dir = oursClick ? dOurs : dHost;
-            const int q = wheelQuantum(index);
-            int stepped = prev + (dir > 0 ? q : -q);
-            if (q > 1) stepped = (int)std::lround(stepped / (double)q) * q;
-            stepped = std::max((int)c.min, std::min((int)c.max, stepped));
-            if (stepped != now)
+            const int target = std::max((int)c.min, std::min((int)c.max, shown + moved));
+            if (target != now)
             {
                 inParamChange_ = true;
-                set(index, (float)stepped);
+                set(index, (float)target);
                 inParamChange_ = false;
                 needNotify_[index].store(true);
-                now = stepped;
             }
+            lastInt_[index].store(target);
+            return;
         }
-        lastInt_[index] = now;
-        lastNorm_[index] = getNormalised(index);
+        lastInt_[index].store(now);
     }
 
     bool formatValue(int index, float plain, std::string& out) override
@@ -601,6 +576,20 @@ public:
         if (trig_setto_.exchange(false)) { setLoopEndHere(gen::P_LOOP_TO); resetParam(gen::P_LOOP_SET_TO); }
         if (trig_sndtest_.exchange(false)) { errorSound(0, 1.0f); resetParam(gen::P_SND_TEST); }
         syncTempoParams();
+        // the transport bar's arrows (0.6.5): one bar from the one shown, through the same move as
+        // the Bar field, so they move what LISTEN plays, or the practice cursor
+        if (int bs = barStep_.exchange(0))
+        {
+            resetParam(bs < 0 ? gen::P_BAR_BACK : gen::P_BAR_FWD);
+            if (current_ && !current_->score.measures.empty())
+            {
+                const Score& sc = current_->score;
+                const int first = (int)sc.measures.front().number, last = (int)sc.measures.back().number;
+                const int bar = std::max(first, std::min(last, (int)std::lround(get(gen::P_GOTO_BAR)) + bs));
+                setTracked(gen::P_GOTO_BAR, (float)bar);
+                locateReq_.store(1);
+            }
+        }
         if (int lr = locateReq_.exchange(0))
         {
             if (current_)
@@ -826,6 +815,7 @@ private:
         inParamChange_ = true;
         set(index, plain);
         inParamChange_ = false;
+        if (index < gen::kNumControls) lastInt_[index].store((int)std::lround(get(index)));
         if (index == gen::P_PLAY) lastPlayParam_ = plain >= 0.5f;
         notifyHostParameterChanged(index);
     }
@@ -2428,6 +2418,7 @@ private:
                       trig_linntest_{false}, trig_next_{false}, pieceSel_{false}, qpanelOpened_{false}, bpmAuthority_{false};
     // 0.5.0
     std::atomic<int> listSrc_{0}, listGen_{0}, pick_{-1}, qpick_{-1}, locateReq_{0}, rowSel_{-1};
+    std::atomic<int> barStep_{0};                  // the transport bar's arrows: -1 or +1 (0.6.5)
     std::atomic<bool> loadingState_{false};
     // 0.5.5
     std::atomic<bool> trig_setfrom_{false}, trig_setto_{false}, linnAsk_{false}, linnAskNow_{false}, lightsRepaint_{false};
@@ -2454,9 +2445,8 @@ private:
     std::string queueName_;
     std::vector<std::string> playlist_;
     std::atomic<bool> needNotify_[gen::kNumControls] = {};
-    int lastInt_[gen::kNumControls];
-    float lastNorm_[gen::kNumControls];
-    float lastHostNorm_[gen::kNumControls];       // what the host itself last sent (0.5.5)
+    std::atomic<int> lastInt_[gen::kNumControls];    // the value shown, as hostStep() knows it
+    std::atomic<int> lastHostInt_[gen::kNumControls];// what the MPC itself last sent
     // stats snapshot (worker -> audio)
     std::atomic<int> statBest_{-1}, statLast_{-1}, statPlays_{-1}, statMinutes_{-1}, statStreak_{0};
     std::atomic<int> statSections_[16] = {{255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}, {255}};
@@ -2494,7 +2484,7 @@ VstIntPtr srDispatcher(AEffect* e, VstInt32 opcode, VstInt32 index, VstIntPtr va
         mpc::copyString(static_cast<char*>(ptr), 64, p->displayText(index).c_str());
         return 0;
     }
-    if (opcode == effSetChunk && e && e->object)
+    if ((opcode == effSetChunk || opcode == effSetProgram) && e && e->object)
     {
         SightReader* sr = static_cast<SightReader*>(static_cast<mpc::Plugin*>(e->object));
         std::lock_guard<std::mutex> lk(sr->stateMutex());

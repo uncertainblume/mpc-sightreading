@@ -1,9 +1,52 @@
 # Changelog
 
 Each version's zip is attached to its [GitHub release](https://github.com/uncertainblume/mpc-sightreading/releases)
-(tags `v0.1.0` ... `v0.6.0`). Install or update by copying the folder in the zip to `VST2 Plugins`
+(tags `v0.1.0` ... `v0.6.5`). Install or update by copying the folder in the zip to `VST2 Plugins`
 on the MPC's internal drive; projects keep their settings, and new settings start at their
 defaults.
+
+## [0.6.5] - 2026-11-21
+
+The jog wheel steps one value at a time, the LISTEN transport is on the PLAY page, LINN comes
+third, PLAY is dark only, and the MIDI loader takes links.
+
+### Fixed
+- **The jog wheel jumped around** on many settings. Since 0.5.5 the plugin had guessed which
+  moves were wheel clicks (a hundredth of the range) and turned those into one step. Any other
+  move passed through unchanged, so a faster turn, a value the MPC had not caught up with, or a
+  preset could jump.
+  - Now the skin lists every value of every number (Akai's documented `replacementStrings`), so
+    the MPC itself moves one value per click, on the wheel, the Q-Links and the big knob.
+  - The long time settings (Timing and the error sound's Decay, Release and Length) step by 5 ms.
+  - The plugin steps in only when the MPC moved from a value it had not caught up with, such as
+    Bar after the cursor moved it: the same step is then made from the value shown.
+  - Presets and projects are taken as they come.
+
+### Added
+- **The transport on PLAY**, next to the loop: back to the start, a bar back, LISTEN (play /
+  pause), a bar forward, then PLAY and LOOP.
+  - The arrows move what LISTEN plays.
+  - Without LISTEN, they move the practice cursor.
+  - SET next to Loop From / Loop To still marks the loop at the bar you hear.
+- **MIDI loader: Add from a link.** Paste a link to a `.mid` file, a `.zip` of them (as on the
+  Mutopia Project), or a page that links to them, and pick from that page's links.
+  - GitHub, Google Drive and Dropbox share links work.
+  - Your computer downloads it; the MPC never touches the web.
+  - The link is kept as the piece's source.
+  - A link dragged from another browser tab onto the page works too.
+  - Sites that refuse scripts are named, with what to do instead: save the file in the browser and
+    drop it on the page.
+
+### Changed
+- **LINN is the third page**, after PLAY and LOAD (LAYOUT is still on LINN's key).
+- **PLAY is dark only.** The LIGHT sub-tab is gone: one tab less, and nothing else loaded for it.
+  - A Light switch in SETUP would have put both themes' pictures in the PLAY page, so it would
+    take more memory.
+  - To bring LIGHT back in a later version: set `WITH_LIGHT = True` in `tools/gen_skin.py` and
+    rebuild. The Day theme is still drawn by `tools/skin/render.py`, and LIGHT returns as its own
+    sub-tab on PLAY's key, as in 0.6.0 (see docs/design.md).
+- The skin's TUI.json is 977 KB (it was 1.4 MB), with every number's steps included.
+- The LOAD page's hint points to the MIDI loader.
 
 ## [0.6.0] - 2026-11-20
 
@@ -276,6 +319,7 @@ First version.
   project.
 - **Library tool.** Fetches public-domain pieces and copies them to the MPC over SSH.
 
+[0.6.5]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.6.5
 [0.6.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.6.0
 [0.5.6]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.6
 [0.5.5]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.5

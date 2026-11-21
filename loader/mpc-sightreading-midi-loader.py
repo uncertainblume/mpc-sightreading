@@ -30,6 +30,7 @@ SPDX-License-Identifier: MIT
 import argparse
 import hashlib
 import hmac
+import html.parser
 import http.server
 import io
 import json
@@ -45,12 +46,16 @@ import tempfile
 import threading
 import time
 import unicodedata
+import socket
+import ssl
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+import zipfile
 
 APP = "mpc-sightreading-midi-loader"
-VERSION = "0.6.0"
+VERSION = "0.6.5"
 DEFAULT_PORT = 47823
 MPC_SERVICE = "acvs"                # the systemd unit that runs the MPC application
 MAX_MIDI = 8 << 20                  # Sight Reader reads files up to 8 MB
@@ -417,7 +422,7 @@ class Library:
             return name
         return self.new_collection(name)
 
-    def add(self, coll, filename, data, title=None, composer="", level=""):
+    def add(self, coll, filename, data, title=None, composer="", level="", source="added with the MIDI loader"):
         if len(data) > MAX_MIDI:
             raise LibraryError("'%s' is over 8 MB, more than Sight Reader reads." % filename)
         if not is_midi(data):
@@ -439,7 +444,7 @@ class Library:
         os.replace(tmp, os.path.join(d, fname))
         rows = self._rows(d)
         rows[fname] = [fname, clean_field(title) if title else title_from(filename), clean_field(composer),
-                       str(level or ""), "added with the MIDI loader"]
+                       str(level or ""), clean_field(source, 200)]
         self._write_rows(d, rows)
         return {"collection": coll, "file": fname, "already": False}
 
@@ -511,6 +516,137 @@ class Library:
             rows = self._rows(d)
             rows[file] = (list(row) + [""] * 5)[:5]
             self._write_rows(d, rows)
+
+
+# ----------------------------------------------------------------------------------------------
+# Add from a link (0.6.5): downloaded by this computer, never by the MPC
+# ----------------------------------------------------------------------------------------------
+
+UA = "%s/%s (+https://github.com/uncertainblume/mpc-sightreading)" % (APP, VERSION)
+MAX_ZIP = 64 << 20                          # a zip of MIDI files, as downloaded
+MAX_PAGE = 4 << 20                          # a web page to list links from
+
+
+def direct_link(url):
+    """Share links that lead to a page, turned into the file itself: GitHub (blob -> raw), Google
+    Drive (file/d/ID -> uc?export=download), Dropbox (dl=0 -> dl=1)."""
+    u = urllib.parse.urlparse(url.strip())
+    host = (u.hostname or "").lower()
+    m = re.match(r"^/([^/]+)/([^/]+)/blob/(.+)$", u.path)
+    if host in ("github.com", "www.github.com") and m:
+        return "https://raw.githubusercontent.com/%s/%s/%s" % m.groups()
+    m = re.match(r"^/file/d/([A-Za-z0-9_-]+)", u.path)
+    if host == "drive.google.com" and m:
+        return "https://drive.google.com/uc?export=download&id=" + m.group(1)
+    if host.endswith("dropbox.com"):
+        q = [(k, v) for k, v in urllib.parse.parse_qsl(u.query) if k != "dl"] + [("dl", "1")]
+        return urllib.parse.urlunparse(u._replace(query=urllib.parse.urlencode(q)))
+    return url.strip()
+
+
+def fetch(url, limit):
+    """GET a link: (bytes, final url, content type, file name). LibraryError with a plain reason."""
+    if not re.match(r"^https?://[^\s/]+", url or "", re.I):
+        raise LibraryError("Paste a web link that starts with http:// or https://.")
+    host = urllib.parse.urlparse(url).hostname or url
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            data = r.read(limit + 1)
+            if len(data) > limit:
+                raise LibraryError("The file at that link is bigger than %s, more than the loader takes." % human_size(limit))
+            name = r.headers.get_filename() or urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(r.geturl()).path))
+            return data, r.geturl(), r.headers.get_content_type(), name
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403, 429):
+            raise LibraryError("%s turned the loader away (HTTP %d). Some sites only let a browser download: open the link "
+                               "in your browser, save the file, and drop it on this page." % (host, e.code))
+        if e.code == 404:
+            raise LibraryError("There is nothing at that link (HTTP 404).")
+        raise LibraryError("%s answered HTTP %d." % (host, e.code))
+    except urllib.error.URLError as e:
+        reason = e.reason
+        if isinstance(reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(reason):
+            raise LibraryError("Python could not check %s's certificate. If you installed Python from python.org, run "
+                               "'Install Certificates.command' in its folder, then try again." % host)
+        if isinstance(reason, (socket.timeout, TimeoutError)):
+            raise LibraryError("%s did not answer in time." % host)
+        if isinstance(reason, socket.gaierror):
+            raise LibraryError("Can't find %s. Check the link, and that this computer is online." % host)
+        raise LibraryError("Could not reach %s: %s" % (host, reason))
+    except (socket.timeout, TimeoutError):
+        raise LibraryError("%s did not answer in time." % host)
+
+
+class _Links(html.parser.HTMLParser):
+    def __init__(self):
+        html.parser.HTMLParser.__init__(self)
+        self.hrefs, self.title, self._in_title = [], "", False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.hrefs.append(href)
+        elif tag == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+
+    def handle_data(self, data):
+        if self._in_title and len(self.title) < 200:
+            self.title += data
+
+
+def page_links(data, base):
+    """The MIDI and zip links of a web page, in page order: ([{url, name}], page title)."""
+    p = _Links()
+    try:
+        p.feed(data.decode("utf-8", "replace"))
+    except Exception:                         # noqa: BLE001 - a broken page still gives what it had
+        pass
+    out, seen = [], set()
+    for href in p.hrefs:
+        url = urllib.parse.urljoin(base, href.strip())
+        u = urllib.parse.urlparse(url)
+        if u.scheme not in ("http", "https") or not u.path.lower().endswith((".mid", ".midi", ".zip", ".kar")):
+            continue
+        key = urllib.parse.urlunparse(u._replace(fragment=""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"url": key, "name": urllib.parse.unquote(os.path.basename(u.path))})
+        if len(out) >= 300:
+            break
+    return out, clean_field(re.sub(r"\s+", " ", p.title), 80)
+
+
+def midi_from(data, name):
+    """The MIDI files in a download: [(file name, bytes)] from a .mid, a RIFF .rmi or a zip of them."""
+    if is_midi(data):
+        return [(name, data)]
+    if data[:4] == b"PK\x03\x04":
+        out = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                for zi in z.infolist():
+                    base = os.path.basename(zi.filename)
+                    if zi.is_dir() or not base.lower().endswith((".mid", ".midi", ".kar")) or base.startswith("."):
+                        continue
+                    if zi.file_size > MAX_MIDI or len(out) >= 200:
+                        continue
+                    with z.open(zi) as f:
+                        b = f.read(MAX_MIDI + 1)
+                    if is_midi(b) and len(b) <= MAX_MIDI:
+                        out.append((base, b))
+        except zipfile.BadZipFile:
+            raise LibraryError("That zip file is damaged.")
+        if not out:
+            raise LibraryError("That zip file has no MIDI files in it.")
+        return out
+    return []
 
 
 # ----------------------------------------------------------------------------------------------
@@ -1298,6 +1434,45 @@ class App:
                 out["mpc"] = m
             return out
 
+    def add_from_links(self, urls, collection):
+        """Downloads each link and adds its MIDI files (a .mid, or a zip of them) to the collection.
+        A single link to a web page gives back the page's MIDI and zip links to choose from."""
+        added, already, problems = [], 0, []
+        urls = [u for u in (str(x).strip() for x in urls) if u][:100]
+        if not urls:
+            raise LibraryError("Paste a link first.")
+        for raw in urls:
+            url = direct_link(raw)
+            try:
+                data, final, ctype, name = fetch(url, MAX_ZIP)
+                files = midi_from(data, name or "piece.mid")
+                if not files:
+                    looks_html = ctype in ("text/html", "application/xhtml+xml") or data.lstrip()[:1] == b"<"
+                    if len(urls) == 1 and looks_html:
+                        links, title = page_links(data[:MAX_PAGE], final)
+                        if not links:
+                            raise LibraryError("That page has no links to MIDI files on it.")
+                        return {"links": links, "title": title, "page": final}
+                    raise LibraryError("That link gives %s, not a MIDI file." % (ctype or "something else"))
+                with self.lock:
+                    for fname, b in files:
+                        r = self.library.add(collection, fname, b, source=final)
+                        collection = r["collection"]
+                        if r["already"]:
+                            already += 1
+                        else:
+                            added.append(r["file"])
+            except LibraryError as e:
+                problems.append(str(e) if len(urls) == 1 else "%s: %s" % (urllib.parse.unquote(os.path.basename(
+                    urllib.parse.urlparse(raw).path)) or raw, e))
+        if added or already:
+            with self.lock:
+                self.settings["last_collection"] = collection
+                write_json(self.settings_path, self.settings)
+        if problems and not added and not already:
+            raise LibraryError(problems[0] if len(problems) == 1 else "%s (and %d more)" % (problems[0], len(problems) - 1))
+        return {"added": added, "already": already, "problems": problems, "collection": collection}
+
     def choose_folder(self):
         start = self.library_root()
         try:
@@ -1412,6 +1587,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if url.path == "/api/settings":
                 app.save_settings(args)
                 return self._send(200, {"ok": True})
+            if url.path == "/api/url":
+                urls = args.get("urls") or [args.get("url", "")]
+                if not isinstance(urls, list):
+                    raise LibraryError("bad request")
+                return self._send(200, dict(ok=True, **app.add_from_links(urls, str(args.get("collection", "")))))
             if url.path == "/api/look":
                 return self._send(200, {"ok": True, "job": app.start("look", "Looking at the MPC", app.job_look).snapshot()})
             if url.path == "/api/sync":
@@ -1754,11 +1934,12 @@ body.dragging .drop-hint { border-color: var(--accent); color: var(--accent); ba
       <div class="card-head">
         <div class="grow"><h2 id="local-title">On this computer</h2><span class="path" id="lib-path"></span></div>
         <button class="btn primary" type="button" data-act="add">Add MIDI files…</button>
+        <button class="btn" type="button" data-act="add-link">Add from a link…</button>
         <button class="btn" type="button" data-act="new-coll">New collection</button>
         <button class="btn ghost" type="button" data-act="reveal">Show folder</button>
       </div>
       <div id="collections" class="colls"></div>
-      <div class="drop-hint" id="drop-hint">Drop .mid files anywhere on this page, or onto a collection to put them in it.</div>
+      <div class="drop-hint" id="drop-hint">Drop .mid files (or a link dragged from another tab) anywhere on this page, or onto a collection to put them in it.</div>
     </section>
 
     <section class="card" id="mpc" aria-labelledby="mpc-title">
@@ -2064,23 +2245,82 @@ async function look(quiet) {
 }
 
 // ---- adding files ------------------------------------------------------------------------------------
-function chooseCollection(count) {
+function collectionFields(preset) {
   const colls = S.library.collections.map(c => c.name);
-  const last = colls.includes(S.settings.last_collection) ? S.settings.last_collection : (colls[0] || "");
+  const last = preset && colls.includes(preset) ? preset
+    : (colls.includes(S.settings.last_collection) ? S.settings.last_collection : (colls[0] || ""));
+  return `${colls.length ? `<label>Collection<select id="m-coll">${colls.map(c => `<option${c === last ? " selected" : ""}>${esc(c)}</option>`).join("")}
+      <option value="">A new collection…</option></select></label>` : ""}
+    <label id="m-new-wrap"${colls.length ? " hidden" : ""}>New collection<input id="m-new" maxlength="48" placeholder="for example My Pieces"></label>`;
+}
+function wireCollectionFields() {
+  const sel = $("#m-coll");
+  if (sel) sel.addEventListener("change", () => { $("#m-new-wrap").hidden = !!sel.value; if (!sel.value) $("#m-new").focus(); });
+}
+function readCollection() {
+  const sel = $("#m-coll");
+  return sel && sel.value ? sel.value : ($("#m-new") ? $("#m-new").value.trim() : "");
+}
+function chooseCollection(count) {
   return new Promise(resolve => {
     modal(`<h2>Add ${plural(count, "file")} to which collection?</h2>
-      <p class="muted small">A collection is a folder in Sight Reader's LOAD list.</p>
-      ${colls.length ? `<label>Collection<select id="m-coll">${colls.map(c => `<option${c === last ? " selected" : ""}>${esc(c)}</option>`).join("")}
-        <option value="">A new collection…</option></select></label>` : ""}
-      <label id="m-new-wrap"${colls.length ? " hidden" : ""}>New collection<input id="m-new" maxlength="48" placeholder="for example My Pieces"></label>`,
+      <p class="muted small">A collection is a folder in Sight Reader's LOAD list.</p>${collectionFields()}`,
       [["Cancel"], ["Add", "primary", () => {
-        const sel = $("#m-coll"), name = sel && sel.value ? sel.value : $("#m-new").value.trim();
+        const name = readCollection();
         if (!name) { toast("Give the collection a name."); return true; }
         const r = modalResolve; modalResolve = null; r(name);
       }]]);
     modalResolve = resolve;
-    const sel = $("#m-coll");
-    if (sel) sel.addEventListener("change", () => { $("#m-new-wrap").hidden = !!sel.value; if (!sel.value) $("#m-new").focus(); });
+    wireCollectionFields();
+  });
+}
+// ---- adding from a link (0.6.5): this computer downloads it, never the MPC -------------------------
+function reportAdded(r) {
+  const parts = [];
+  if (r.added && r.added.length) parts.push(`Added ${plural(r.added.length, "piece")} to ${r.collection}.`);
+  if (r.already) parts.push(`${plural(r.already, "piece")} ${r.already === 1 ? "was" : "were"} there already.`);
+  if (r.problems && r.problems.length) parts.push(r.problems[0] + (r.problems.length > 1 ? ` (and ${r.problems.length - 1} more)` : ""));
+  toast(parts.join(" ") || "Nothing added.");
+}
+function addFromLink(url, coll) {
+  modal(`<h2>Add from a link</h2>
+    <label>Link<input id="m-url" spellcheck="false" autocapitalize="off" placeholder="https://…" value="${esc(url || "")}"></label>
+    ${collectionFields(coll)}
+    <p class="muted small">A link to a .mid file, a .zip of them (as on the Mutopia Project), or a page that links to them, to pick from.
+      GitHub, Google Drive and Dropbox share links work too. This computer downloads it. Some sites only let a browser download:
+      then save the file there and drop it on this page.</p>`,
+    [["Cancel"], ["Add", "primary", async () => {
+      const link = $("#m-url").value.trim(), name = readCollection();
+      if (!link) { toast("Paste a link."); return true; }
+      if (!name) { toast("Give the collection a name."); return true; }
+      toast("Downloading…", true);
+      try {
+        const r = await api("/api/url", {urls: [link], collection: name});
+        if (r.links) { $("#toast").hidden = true; pickLinks(r, name); return true; }
+        reportAdded(r);
+      } catch (e) { toast(e.message); return true; }
+      await refresh();
+    }]]);
+  wireCollectionFields();
+}
+function pickLinks(r, coll) {
+  const links = r.links;
+  modal(`<h2>${esc(r.title || "MIDI links on that page")}</h2>
+    <p class="muted small">${plural(links.length, "MIDI or zip link")} on the page. Tick the ones to add to ${esc(coll)}.</p>
+    <ul class="mpc-only">${links.map((l, i) => `<li><label><input type="checkbox" data-link="${i}"><span class="t">${esc(l.name)}</span></label></li>`).join("")}</ul>
+    <div class="mpc-actions"><button class="btn small" type="button" id="m-all">Select all</button></div>`,
+    [["Cancel"], ["Add selected", "primary", async () => {
+      const urls = $$("#dialog input[data-link]:checked").map(c => links[+c.dataset.link].url);
+      if (!urls.length) { toast("Tick the files to add."); return true; }
+      toast(`Downloading ${plural(urls.length, "file")}…`, true);
+      try { reportAdded(await api("/api/url", {urls, collection: coll})); }
+      catch (e) { toast(e.message); return true; }
+      await refresh();
+    }]]);
+  $("#m-all").addEventListener("click", () => {
+    const boxes = $$("#dialog input[data-link]"), all = boxes.every(b => b.checked);
+    boxes.forEach(b => { b.checked = !all; });
+    $("#m-all").textContent = all ? "Select all" : "Select none";
   });
 }
 async function addFiles(list, coll) {
@@ -2108,7 +2348,8 @@ $("#file-input").addEventListener("change", e => { const f = e.target.files; con
 function pickFiles(coll) { const i = $("#file-input"); i._coll = coll || null; i.click(); }
 
 let dragDepth = 0;
-const hasFiles = e => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+const dragTypes = e => (e.dataTransfer ? Array.from(e.dataTransfer.types || []) : []);
+const hasFiles = e => dragTypes(e).includes("Files") || dragTypes(e).includes("text/uri-list");
 window.addEventListener("dragenter", e => { if (!hasFiles(e)) return; dragDepth++; document.body.classList.add("dragging"); $("#dropmask").hidden = false; });
 window.addEventListener("dragleave", e => {
   if (!hasFiles(e)) return;
@@ -2130,6 +2371,11 @@ window.addEventListener("drop", e => {
   const c = e.target.closest && e.target.closest(".coll");
   $$(".coll.over").forEach(x => x.classList.remove("over"));
   if (!$("#modal").hidden && modalLocked) { toast("Wait until the MPC is done."); return; }
+  if (!dragTypes(e).includes("Files")) {
+    const link = (e.dataTransfer.getData("text/uri-list") || "").split(/\r?\n/).find(l => l && !l.startsWith("#"));
+    if (link) addFromLink(link.trim(), c ? c.dataset.coll : null);
+    return;
+  }
   addFiles(e.dataTransfer.files, c ? c.dataset.coll : null);
 });
 
@@ -2229,6 +2475,7 @@ document.addEventListener("click", async e => {
   try {
     if (act === "edit" && piece) editPiece(piece.dataset.coll, piece.dataset.file);
     else if (act === "add") pickFiles(null);
+    else if (act === "add-link") addFromLink("", null);
     else if (act === "add-to" && coll) pickFiles(coll.dataset.coll);
     else if (act === "new-coll") newCollection();
     else if (act === "rename-coll" && coll) renameCollection(coll.dataset.coll);

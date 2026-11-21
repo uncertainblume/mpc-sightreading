@@ -6,19 +6,19 @@
 Outputs
   plugin/src/sr/gen/layout_gen.h   staff geometry and cell frame tables (tools/skin/geometry.py)
   plugin/src/sr/gen/params_gen.h   the parameter table (tools/skin/params.py)
-  plugin/skins/TUI.json            touch screen: 9 pages; PLAY also in a Day version (LIGHT)
+  plugin/skins/TUI.json            touch screen: 9 pages (PLAY in a Day version too with WITH_LIGHT)
   plugin/skins/Q-Links.json        what the 16 knobs do on each page
   plugin/skins/*.png               every film strip and picture
 
 Format: docs/ui-reference.md of Akai's MPC plugin SDK. Key order matters to the MPC's parser,
 and the overlay widgets need two consecutive "version" keys, so this writes JSON by hand.
 
-Pages (function keys):
-  PLAY   the grand staff, counters, transport (Night); press its key again for LIGHT (Day)
-  LOAD   library browser          GEN    exercise generator
+Pages (function keys, in this order since 0.6.5):
+  PLAY   the grand staff, counters, transport      LOAD   library browser
+  LINN   LinnStrument lights (LAYOUT: press again) GEN    exercise generator
   SETUP  practice settings        MORE   range, names, accompaniment, ramp
   SOUND  the error sound, metronome    COLOR  note colour dots, played-note marks
-  LINN   LinnStrument lights      STATS  progress for the current piece
+  STATS  progress for the current piece
 """
 import os, sys
 
@@ -190,6 +190,10 @@ class Theme:
         self.hi = argb(t["hi"])
         self.line = argb(t["panel_line"])
 
+# What a knob's value label shows instead of the value's own text: Folder shows the folder's name
+# (its steps are numbers, for the data wheel)
+SHOWN = {"folder": P("text_folder_name")}
+
 def control_slot(th, pid, x, y, kind):
     """kind: knob, menu, switch, button, toggle, or pair (pid = two ids: two half-width buttons).
     Returns entries (absolute positions)."""
@@ -216,14 +220,15 @@ def control_slot(th, pid, x, y, kind):
                   bounds(0, 0, SLOT_W, SLOT_H - 26, when="WhenFocussed")),
             entry("knob", "Knob", o(("version", 3), ("knobType", "FilmStrip"), ("filmStrip", kfile), ("numFrames", kframes), ("invert", False),
                                     ("dragOrientation", "Vertical"), ("handleName", "Data")), bounds(8, 2, kw, kh)),
-            label("value", "Value", "Data", 80, 8, SLOT_W - 90, 50, 26 if kind == "knob" else 23, th.text, "left verticallyCentred", "SemiBold"),
+            label("value", "Value", "Shown", 80, 8, SLOT_W - 90, 50, 26 if kind == "knob" else 23, th.text, "left verticallyCentred", "SemiBold"),
         ]
         overlay = "knob overlay" if kind == "knob" else "menu overlay"
         comp = container(kids, actions=[action("Mouse Down", "Q-Link"), action("Double Click", "Show Overlay", "Data", overlay),
                                         action("Enter Pressed", "Show Overlay", "Data", overlay)])
         out.append(o(("version", 2), ("componentData", o(("version", 1), ("name", pid), ("type", "%s_slot_%s" % (kind, th.name)),
                                                           ("data", o(("version", 1), ("handleName", "Data"))))),
-                     ("handle remapping", o(("version", 1), ("map", [o(("key", "Data"), ("value", handle))]))),
+                     ("handle remapping", o(("version", 1), ("map", [o(("key", "Data"), ("value", handle)),
+                                                                     o(("key", "Shown"), ("value", SHOWN.get(pid, handle)))]))),
                      ("bounds", bounds(x, y + 24, SLOT_W, SLOT_H - 26, focus="Yes"))))
         return out, comp
     if kind == "switch":
@@ -448,20 +453,41 @@ def play_page(th):
     defs["%s_titlebox" % th.name] = focus_box(th, [action("Mouse Down", "Toggle Switch", P("qpanel")),
                                                    action("Enter Pressed", "Toggle Switch", P("piece_go"))])
     kids.append(touch_area("titlebox", "%s_titlebox" % th.name, 8, 1, 482, 57, [("Data", P("piece"))]))
-    # footer: two rows of controls
+    # footer: two rows of controls; the transport bar fills the first half of the second row
     layout = [
         [("mode", "switch"), ("tempo", "knob"), ("hands", "switch"), ("view", "menu")],
-        [(("play", "listen"), "pair"), (("restart", "loop"), "pair"), ("loop_from", "knob"), ("loop_to", "knob")],
+        [None, None, ("loop_from", "knob"), ("loop_to", "knob")],
     ]
     fk, fdefs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118, short=True)
     defs.update(fdefs)
     kids.extend(fk)
+    # The transport (0.6.5): to the start, a bar back, LISTEN (play / pause), a bar forward, then
+    # PLAY (practice) and LOOP. The bar buttons move what LISTEN plays, or the practice cursor.
+    ty = G.FOOTER_Y + 118
+    tx0, tx1 = COLS_X[0] + 10, COLS_X[1] + SLOT_W - 10
+    kids.append(label("tr_name", "Text", "Invalid", tx0, ty + 2, 120, 22, 15, th.dim, "left verticallyCentred", "SemiBold", "Upper Case", "Transport"))
+    kids.append(label("tr_hint", "Text", "Invalid", tx0 + 104, ty + 2, tx1 - tx0 - 104, 22, 14, th.dim, "left verticallyCentred", "Regular",
+                      text="LISTEN plays the piece; the arrows move a bar"))
+    tbar = [("restart", "icon:start"), ("bar_back", "icon:back"), ("listen", "LISTEN"), ("bar_fwd", "icon:fwd"),
+            ("play", "PLAY"), ("loop", "LOOP")]
+    gap = 8
+    widths = [64, 64, 112, 64, 0, 0]
+    widths[4] = ((tx1 - tx0) - sum(widths) - gap * (len(tbar) - 1)) // 2
+    widths[5] = (tx1 - tx0) - sum(widths) - gap * (len(tbar) - 1)
+    bx = tx0
+    for (pid, cap), bw in zip(tbar, widths):
+        on, off = caption_images(th, bw, 56, "button", cap)
+        kids.append(button(pid + "_btn", on, off, P(pid), 1, 1, bx, ty + 26, bw, 56))
+        bx += bw + gap
     # SET in the Loop From / Loop To slots (0.5.5): the bar you hear while LISTEN is on, or the
     # bar the cursor is in
     son, soff = caption_images(th, 70, 44, "button", "SET")
     for col, pid in ((2, "loop_set_from"), (3, "loop_set_to")):
         kids.append(button(pid + "_btn", son, soff, P(pid), 1, 1, COLS_X[col] + SLOT_W - 82, G.FOOTER_Y + 118 + 34, 70, 44))
     rects = list(grid_page.last_rects)
+    # the second row's Q-Link rectangle spans the transport bar too
+    rx, ry, rw, rh = (int(v) for v in rects[1].split())
+    rects[1] = rect(tx0 - 6, ry, rx + rw - (tx0 - 6), rh)
     # the third knob row works the header fields (its rectangle is drawn round them); the fourth
     # has no on-screen controls on this page
     for q, pid in zip([5, 6, 7, 8], ["goto_bar", "goto_step", "bpm", "loop_bars"]):
@@ -523,7 +549,8 @@ def load_page(th):
     kids.append(label("msg", "Value", P("text_message"), 324, 482, 640, 30, 17, th.dim))
     kids.extend(paragraph("hint", "Turn the data wheel on the list and push it to load, or tap a file and LOAD. The folder "
                           "becomes PLAY's piece list (tap the title there). ADD TO LIST builds the Playlist, the last folder. "
-                          "Your own files: SightReader/Library/<folder>/, then RESCAN.", 324, 514, 640, 15, th.dim, 20))
+                          "Your own files: the MIDI loader on your computer (see the README); the list updates by itself.",
+                          324, 514, 640, 15, th.dim, 20))
     qmap = {13: IDX["folder"], 14: IDX["scroll"], 15: IDX["select"], 16: IDX["sort"]}
     return kids, defs, qmap, fit_rects([group])
 
@@ -641,14 +668,22 @@ def stats_page(th):
         kids.append(label("stats%d" % i, "Value", P("text_stats%d" % i), 16, 392 + i * 34, 1248, 32, 18, th.text if i < 2 else th.dim))
     return kids, {}, {}, [rect(0, 0, 0, 0)] * 4
 
+# Light mode (0.6.5: off). Until 0.6.0 PLAY also came on light paper, as a second sub-tab (LIGHT)
+# on PLAY's key. The user preferred dark only to a heavier PLAY page: the MPC cannot swap a page's
+# pictures by a setting, so a Light switch in SETUP would put both themes' staff layers (about
+# 1,400 pictures each) in one page, with one set hidden, and load both. To bring light mode back:
+# set WITH_LIGHT = True and rebuild. The Day theme is still drawn by tools/skin/render.py
+# (THEMES["day"]), so LIGHT returns as before: its own sub-tab, loaded only while it is shown.
+WITH_LIGHT = False
+
 # One list per function key: its sub-tabs (press the key again), each (tab name, builder, theme).
-# Only PLAY has a Day version: every sub-tab shows on the MPC as its own button, and the settings
-# pages read fine in the MPC's own dark style.
-PAGES = [[("PLAY", play_page, "night"), ("LIGHT", play_page, "day")], [("LOAD", load_page, "night")], [("GEN", gen_page, "night")],
-         [("SETUP", setup_page, "night")], [("MORE", more_page, "night")], [("SOUND", sound_page, "night")],
-         [("COLOR", color_page, "night")], [("LINN", linn_page, "night"), ("LAYOUT", linn_layout_page, "night")],
-         [("STATS", stats_page, "night")]]
-THEME_ORDER = ["night", "day"]
+# Every sub-tab shows on the MPC as its own button. LINN comes third (0.6.5), after PLAY and LOAD.
+PAGES = [[("PLAY", play_page, "night")] + ([("LIGHT", play_page, "day")] if WITH_LIGHT else []),
+         [("LOAD", load_page, "night")],
+         [("LINN", linn_page, "night"), ("LAYOUT", linn_layout_page, "night")],
+         [("GEN", gen_page, "night")], [("SETUP", setup_page, "night")], [("MORE", more_page, "night")],
+         [("SOUND", sound_page, "night")], [("COLOR", color_page, "night")], [("STATS", stats_page, "night")]]
+THEME_ORDER = ["night"] + (["day"] if WITH_LIGHT else [])
 
 # ---------------------------------------------------------------------------------------------
 def main():
@@ -684,13 +719,16 @@ def main():
             qentries.append(o(("Tab", ti + 1), ("SubTab", si + 1), ("Bank Direction", "RowTopDown"), ("Q-Links", ql)))
     for k, v in sorted(defs_all.items()):
         local.append(o(("key", k), ("value", v)))
-    # discrete steps for every choice and switch parameter
+    # discrete steps for every parameter: choices and switches, and since 0.6.5 every number
+    # (one value per data-wheel click, Q-Link step and big-knob step; params.py STEP)
     repl = []
     for (pid, name, kind, rng, unit) in PR.CONTROL:
         if kind == "choice":
             repl.append(o(("key", P(pid)), ("value", list(rng[0]))))
         elif kind in ("bool", "trigger"):
             repl.append(o(("key", P(pid)), ("value", ["Off", "On"])))
+        elif kind in ("int", PR.NOTE):
+            repl.append(o(("key", P(pid)), ("value", [PR.value_text(pid, v) for v in PR.step_values(pid)])))
     tui = o(("pageData", o(("version", 1),
                            ("componentDefinitions", o(("version", 2), ("importFiles", []), ("localComponentDefinitions", local))),
                            ("replacementStrings", repl),

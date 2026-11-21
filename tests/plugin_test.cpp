@@ -131,7 +131,8 @@ static float peakAfter(Plug& p, int param, double seconds)
     return peak;
 }
 
-// Plain values the way the plugin sees them, and the MPC's data wheel (a step of 1/100 of the range).
+// Plain values the way the plugin sees them, and the MPC's data wheel. Since 0.6.5 the skin lists
+// every value of a number, so a click moves the value the MPC holds by one of them.
 static int plainOf(Plug& p, int idx)
 {
     const auto& c = gen::kControls[idx];
@@ -142,12 +143,19 @@ static void setPlain(Plug& p, int idx, double v)
     const auto& c = gen::kControls[idx];
     p.e->setParameter(p.e, idx, (float)((v - c.min) / (c.max - c.min)));
 }
+static int numSteps(int idx)
+{
+    const auto& c = gen::kControls[idx];
+    return (int)std::lround((c.max - c.min) / c.step) + 1;
+}
+static float stepNorm(int idx, int k) { return (float)k / (float)(numSteps(idx) - 1); }
+static int stepOf(Plug& p, int idx) { return (int)std::lround(p.e->getParameter(p.e, idx) * (numSteps(idx) - 1)); }
 static void wheel(Plug& p, int idx, int steps)
 {
     for (int i = 0; i < std::abs(steps); ++i)
     {
-        float v = p.e->getParameter(p.e, idx) + (steps > 0 ? 0.01f : -0.01f);
-        p.e->setParameter(p.e, idx, std::max(0.0f, std::min(1.0f, v)));
+        int k = std::max(0, std::min(numSteps(idx) - 1, stepOf(p, idx) + (steps > 0 ? 1 : -1)));
+        p.e->setParameter(p.e, idx, stepNorm(idx, k));
         p.block();
     }
 }
@@ -581,22 +589,37 @@ int main(int argc, char** argv)
         setPlain(p, gen::P_TEMPO, 100); p.run(0.02);
         wheel(p, gen::P_TEMPO, 1); p.run(0.02);
         std::printf("wheel: tempo %d", plainOf(p, gen::P_TEMPO));
-        CHECK(plainOf(p, gen::P_TEMPO) == 101);                               // not 102
-        // a host that adds its hundredth to the value it last sent, not the one read back
-        float host = p.e->getParameter(p.e, gen::P_TEMPO) + 0.0f;
-        p.e->setParameter(p.e, gen::P_TEMPO, host + 0.01f); p.run(0.02);
-        p.e->setParameter(p.e, gen::P_TEMPO, host + 0.02f); p.run(0.02);
+        CHECK(plainOf(p, gen::P_TEMPO) == 101);
+        wheel(p, gen::P_TEMPO, 1); wheel(p, gen::P_TEMPO, 1); p.run(0.02);
         std::printf(" -> %d", plainOf(p, gen::P_TEMPO));
         CHECK(plainOf(p, gen::P_TEMPO) == 103);
+        // a fast turn: the MPC moves three steps at once, and that is what happens (0.6.0 jumped)
+        p.e->setParameter(p.e, gen::P_TEMPO, stepNorm(gen::P_TEMPO, stepOf(p, gen::P_TEMPO) + 3)); p.run(0.02);
+        CHECK(plainOf(p, gen::P_TEMPO) == 106);
         setPlain(p, gen::P_TIMING, 160); p.run(0.02);
         wheel(p, gen::P_TIMING, 1); p.run(0.02);
         std::printf(", timing %d", plainOf(p, gen::P_TIMING));
         CHECK(plainOf(p, gen::P_TIMING) == 165);                              // round 5 ms steps
         setPlain(p, gen::P_OUT_CH, 1); p.run(0.02);
         wheel(p, gen::P_OUT_CH, 1); p.run(0.02);
-        std::printf(", out ch %d\n", plainOf(p, gen::P_OUT_CH));
+        std::printf(", out ch %d", plainOf(p, gen::P_OUT_CH));
         CHECK(plainOf(p, gen::P_OUT_CH) == 2);                                // one click, one channel
-        setPlain(p, gen::P_OUT_CH, 1); setPlain(p, gen::P_TIMING, 160); p.run(0.02);
+        // the MPC behind the plugin: BPM follows Tempo, so BPM changed under the MPC. Its click is
+        // a step from the BPM it last sent; the plugin makes the step from the BPM shown
+        setPlain(p, gen::P_BPM, 120); p.run(0.02);
+        const int bpmBefore = stepOf(p, gen::P_BPM);
+        setPlain(p, gen::P_TEMPO, 150); p.run(0.05);
+        const int bpmShown = plainOf(p, gen::P_BPM);
+        p.e->setParameter(p.e, gen::P_BPM, stepNorm(gen::P_BPM, bpmBefore + 1)); p.run(0.02);
+        std::printf(", BPM %d -> %d (the MPC still at 120)", bpmShown, plainOf(p, gen::P_BPM));
+        CHECK(bpmShown != 120 && plainOf(p, gen::P_BPM) == bpmShown + 1);
+        // a preset is taken as it comes, even far from the value shown
+        setPlain(p, gen::P_TIMING, 300); p.run(0.02);
+        p.d(effSetProgram, 0, 3); p.run(0.02);                                 // Rhythm - strict: 120 ms
+        std::printf(", preset timing %d\n", plainOf(p, gen::P_TIMING));
+        CHECK(plainOf(p, gen::P_TIMING) == 120);
+        p.d(effSetProgram, 0, 0); p.run(0.02);
+        setPlain(p, gen::P_OUT_CH, 1); setPlain(p, gen::P_TIMING, 160); setPlain(p, gen::P_TEMPO, 100); p.run(0.02);
     }
     // ---- 0.5.5: LISTEN pauses, moves with the Bar field, and SET marks the loop --------------------
     {
@@ -616,6 +639,13 @@ int main(int argc, char** argv)
         wheel(p, gen::P_GOTO_BAR, 2); p.run(0.1);                              // the Bar field moves what you hear
         std::printf("after two clicks on Bar: bar %d\n", digits(p, gen::kD_d_bar, 3));
         CHECK(digits(p, gen::kD_d_bar, 3) == barPaused + 2);
+        // 0.6.5: the transport bar's arrows move what you hear by a bar too
+        p.e->setParameter(p.e, gen::P_BAR_FWD, 1.0f); p.run(0.1);
+        CHECK(digits(p, gen::kD_d_bar, 3) == barPaused + 3);
+        CHECK(p.e->getParameter(p.e, gen::P_BAR_FWD) < 0.5f);                  // the button lets go
+        p.e->setParameter(p.e, gen::P_BAR_BACK, 1.0f); p.run(0.1);
+        std::printf("transport: >> then << from bar %d: bar %d\n", barPaused + 2, digits(p, gen::kD_d_bar, 3));
+        CHECK(digits(p, gen::kD_d_bar, 3) == barPaused + 2);
         p.e->setParameter(p.e, gen::P_LOOP_SET_FROM, 1.0f); p.run(0.1);       // SET: the loop starts here
         CHECK(plainOf(p, gen::P_LOOP_FROM) == barPaused + 2);
         CHECK(p.e->getParameter(p.e, gen::P_LOOP_SET_FROM) < 0.5f);
@@ -624,6 +654,15 @@ int main(int argc, char** argv)
         p.e->setParameter(p.e, gen::P_PLAY, 1.0f); p.run(0.1);                // PLAY stops it
         CHECK(p.e->getParameter(p.e, gen::P_LISTEN) < 0.5f);
         p.e->setParameter(p.e, gen::P_PLAY, 0.0f); p.run(0.1);
+        // without LISTEN the arrows move the practice cursor, and stop at the first bar
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.2);
+        const int bar0 = digits(p, gen::kD_d_bar, 3);
+        p.e->setParameter(p.e, gen::P_BAR_FWD, 1.0f); p.run(0.1);
+        p.e->setParameter(p.e, gen::P_BAR_FWD, 1.0f); p.run(0.1);
+        CHECK(digits(p, gen::kD_d_bar, 3) == bar0 + 2);
+        for (int i = 0; i < 4; ++i) { p.e->setParameter(p.e, gen::P_BAR_BACK, 1.0f); p.run(0.1); }
+        std::printf("practice cursor: from bar %d, >> >> then << x4: bar %d\n", bar0, digits(p, gen::kD_d_bar, 3));
+        CHECK(digits(p, gen::kD_d_bar, 3) == bar0);
     }
     // ---- 0.5.5: Fit Range = Fold moves notes the LinnStrument cannot play onto it -----------------
     {

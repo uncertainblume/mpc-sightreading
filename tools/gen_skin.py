@@ -453,9 +453,11 @@ def play_page(th):
     defs["%s_titlebox" % th.name] = focus_box(th, [action("Mouse Down", "Toggle Switch", P("qpanel")),
                                                    action("Enter Pressed", "Toggle Switch", P("piece_go"))])
     kids.append(touch_area("titlebox", "%s_titlebox" % th.name, 8, 1, 482, 57, [("Data", P("piece"))]))
-    # footer: two rows of controls; the transport bar fills the first half of the second row
+    # footer: two rows of controls; the transport bar fills the first half of the second row.
+    # Accomp sits next to Hands (0.7.0): with one hand chosen, it is what you hear of the other;
+    # View is on SETUP
     layout = [
-        [("mode", "switch"), ("tempo", "knob"), ("hands", "switch"), ("view", "menu")],
+        [("mode", "switch"), ("tempo", "knob"), ("hands", "switch"), ("accomp", "switch")],
         [None, None, ("loop_from", "knob"), ("loop_to", "knob")],
     ]
     fk, fdefs, qmap = grid_page(th, layout, top=G.FOOTER_Y, row_h=118, short=True)

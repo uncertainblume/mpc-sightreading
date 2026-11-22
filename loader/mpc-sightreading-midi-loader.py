@@ -55,7 +55,7 @@ import webbrowser
 import zipfile
 
 APP = "mpc-sightreading-midi-loader"
-VERSION = "0.6.5"
+VERSION = "0.7.0"
 DEFAULT_PORT = 47823
 MPC_SERVICE = "acvs"                # the systemd unit that runs the MPC application
 MAX_MIDI = 8 << 20                  # Sight Reader reads files up to 8 MB

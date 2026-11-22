@@ -1,9 +1,49 @@
 # Changelog
 
 Each version's zip is attached to its [GitHub release](https://github.com/uncertainblume/mpc-sightreading/releases)
-(tags `v0.1.0` ... `v0.6.5`). Install or update by copying the folder in the zip to `VST2 Plugins`
+(tags `v0.1.0` ... `v0.7.0`). Install or update by copying the folder in the zip to `VST2 Plugins`
 on the MPC's internal drive; projects keep their settings, and new settings start at their
 defaults.
+
+## [0.7.0] - 2026-11-22
+
+Practising one hand, you hear the other in time.
+
+### Fixed
+- **The other hand stayed silent** when practising one hand. The accompaniment (0.5.5) worked,
+  but:
+  - **Accomp was Off in older projects.** It was Off by default until 0.5.5, and a project keeps
+    what it saved. A project saved before 0.7.0 now gets **Other Hand** once, when it loads. Set
+    it Off on PLAY if you want silence.
+  - **It was out of sight**, on the MORE page. **Accomp is now on PLAY, next to Hands.** View
+    moved off PLAY (it is on SETUP).
+  - **A note played while LISTEN was paused did nothing:** practice ignored it while LISTEN was
+    paused. Now that note takes over. LISTEN stops, and practice goes on from the start of the
+    bar you were hearing, with the other hand. PLAY does the same.
+- **A left-hand intro came all at once.** Starting by just playing, the notes before your first
+  one went out together.
+  - Now notes you were ahead of are passed over (an intro, or the in-between notes when you play
+    faster than the tempo).
+  - A note still sounding at your note comes in with it, as do notes within a sixteenth before it.
+  - To hear an intro, press **PLAY** in Wait mode: the other hand plays from the start, in time,
+    and waits for your first note.
+- **The other hand's note on your beat sounded before you played** after a restart, PLAY or a
+  jump (Bar, Note, the transport arrows). It now waits and sounds with your note.
+
+### Added
+- **The message line says what the other hand does** when you change Hands or Accomp, e.g.
+  "Right hand; left hand on Sight Reader MIDI Out ch 1", or that Accomp is Off.
+- The tests now check what the plugin sends to MIDI Out, in Wait and Flow, with either hand, an
+  intro, PLAY and a paused LISTEN. They use a stand-in for the MPC's ALSA library
+  (`tests/fake_alsa.c`).
+
+How it behaves (Hands = Right or Left, Accomp = Other Hand):
+- **Wait**: the other hand plays in time from your note up to the next note you have to play,
+  then waits there, its last note held. When you play, its notes on that beat come in with
+  yours, and it goes on.
+- **Flow**: the clock carries both hands. When Flow holds for a note you are late on, the other
+  hand holds too.
+- **Rhythm**: the clock carries both hands, without holding.
 
 ## [0.6.5] - 2026-11-21
 
@@ -319,6 +359,7 @@ First version.
   project.
 - **Library tool.** Fetches public-domain pieces and copies them to the MPC over SSH.
 
+[0.7.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.7.0
 [0.6.5]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.6.5
 [0.6.0]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.6.0
 [0.5.6]: https://github.com/uncertainblume/mpc-sightreading/releases/tag/v0.5.6

@@ -217,6 +217,41 @@ Transpose, which the plugin cannot see.
   This keeps the audio thread's output handle unshared and does not depend on what the MPC
   routes to the track.
 
+## 0.7.0: the other hand, end to end
+
+The user practised one hand and heard nothing of the other. The 0.5.5 accompaniment clock
+(above) was right in the unit tests. But nothing had ever checked what leaves the plugin: the
+tests ran without ALSA, so `alsa_.sendMidi()` went nowhere.
+
+**A fake ALSA for the tests.** `tests/fake_alsa.c` is built as a shared library with the soname
+`libasound.so.2`. plugin_test loads it before the plugin, so the plugin's
+`dlopen("libasound.so.2")` finds it. The plugin is unchanged. Every event is written to a trace
+with the audio time the test sets before each block. The test then checks note-on and note-off
+times on "MIDI Out" to the block (about 3 ms). With it:
+- the 0.5.5 logic was confirmed;
+- an intro went out as one burst, now fixed;
+- a note on the waiting step sounded early after a locate, now fixed.
+
+**What was wrong, then.** There were three causes, none in the clock itself:
+- **Accomp was Off.** Projects keep what they saved, and Off was the default until 0.5.5. The
+  extra state now carries `ver=<kVersion>`. A project without it (saved before 0.7.0) gets Accomp
+  = Other Hand once, in `loadExtraState()`, which runs after the parameters are restored.
+- **Accomp was out of sight**, on MORE. It is now on PLAY next to Hands, and the message line
+  says what the other hand does when either changes.
+- **A paused LISTEN swallowed notes**: the engine got none while `listening_`, which stays true
+  while paused. A note while paused, or PLAY, now calls `takeOverFromListen()`: LISTEN stops and
+  practice is located at the start of the bar LISTEN was in.
+
+**The catch-up.** When you complete a step in Wait mode, `catchUpAccomp()` sends the
+accompaniment the clock had not reached:
+- notes within a sixteenth before the step, and notes still sounding at it;
+- not older ones, which used to go out all at once (an intro started by playing, or the
+  in-between notes when you are faster than the tempo).
+
+`resetPosition()` and `locateStep()` put the clock one unit short of the step they land on (as
+it waits between steps). So its notes on that step come with yours, and an intro still plays from
+PLAY.
+
 ## 0.6.5: wheel steps, the transport, dark only
 
 **The wheel, again.** 0.5.5 assumed the MPC moves a number by a hundredth of its range per click,

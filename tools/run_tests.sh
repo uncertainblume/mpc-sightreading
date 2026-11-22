@@ -17,7 +17,14 @@ if [ -f "$NATIVE" ] && [ -d "$SDK/framework" ]; then
     cp "$ROOT/tests/data/minuet_g.mid" "$HOME_DIR/Library/Classics/anna-magdalena-04.mid"
     printf 'anna-magdalena-04.mid\tMinuet in G\tJ. S. Bach (attr.), BWV Anh. 114\t1\tMutopia Project, public domain\n' > "$HOME_DIR/Library/Classics/index.tsv"
     "$CXX" -std=c++17 -O1 -g -I"$SDK/framework" -I"$ROOT/plugin/src" "$ROOT/tests/plugin_test.cpp" -o "$OUT/plugin_test" -ldl -lpthread
-    "$OUT/plugin_test" "$NATIVE" "$HOME_DIR" "$OUT/live.json"
+    # Linux: a stand-in libasound records what the plugin sends to MIDI Out (tests/fake_alsa.c)
+    FAKE_ALSA=""
+    if [ "$(uname)" = Linux ]; then
+        mkdir -p "$OUT/fakealsa"
+        "${CC:-cc}" -shared -fPIC -O1 -Wl,-soname,libasound.so.2 "$ROOT/tests/fake_alsa.c" -o "$OUT/fakealsa/libasound.so.2"
+        FAKE_ALSA="$OUT/fakealsa/libasound.so.2"
+    fi
+    "$OUT/plugin_test" "$NATIVE" "$HOME_DIR" "$OUT/live.json" $FAKE_ALSA
     SIGHTREADER_HOME="$HOME_DIR" "$SDK/.sdk-tools/host_sim" "$NATIVE" test | tail -3
     rm -rf "$HOME_DIR"
 else

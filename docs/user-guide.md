@@ -58,7 +58,8 @@ units (160 ms, 30%, +2 st, Ch 1).
   Hands to Right to practise the right hand alone), or "You play C5, the music says C4" when your
   instrument sounds an octave away from the music (Pitch Tol = Octave accepts any octave, or
   transpose the instrument).
-- **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, View; the **transport**
+- **Controls:** Mode, Tempo (20-200 % of the file's tempo), Hands, **Accomp** (what you hear of
+  the other hand; below); the **transport**
   (below); **Loop From** and **Loop To**, each with a **SET** button that puts it at the bar you
   hear while LISTEN is on (else the bar the cursor is in).
 - **Transport (0.6.5):** the row of buttons at the bottom left. **|<** goes back to the start
@@ -82,7 +83,9 @@ play is graded meanwhile and your practice position stays where it was. It stops
 when you press PLAY or RESTART.
 
 **Its transport:** press LISTEN while it plays to **pause** (status PAUSED; the cursor
-stays where you stopped) and again to **go on** from there. While LISTEN is on, playing or
+stays where you stopped) and again to **go on** from there. Play a note while it is paused, or
+press PLAY, and practice takes over (0.7.0): LISTEN stops and practice goes on from the start of
+the bar you were hearing, the note you played counting. While LISTEN is on, playing or
 paused, the transport's **<<** and **>>** move what you hear a bar at a time, and so do the
 header's **Bar** and **Note** fields (tap one, turn the jog wheel, or Q-Links 5 and 6) and the
 MPC's playhead with Start = MPC Play. **|<** stops it and goes back to the start. To find a loop by
@@ -100,6 +103,27 @@ track on your controller, never *All Ports*.
 Speed (MORE page, **Listen At**): *Tempo* follows the Tempo knob (turn it while it plays), or a
 fixed 25, 50, 75, 100, 125 or 150 % of the file's tempo. **Listen Hands**: Both, or only the
 hands you practise (the Hands setting).
+
+### Practising one hand
+
+Set **Hands** to Right or Left and you play that hand; with **Accomp** (next to it on PLAY) on
+*Other Hand*, the default, the plugin plays the other hand in time through **Sight Reader MIDI
+Out**, so you hear how your hand fits the piece. Give an instrument track that port as its input
+(see Listen above: the same set-up). The message line says what happens, e.g. "Right hand; left
+hand on Sight Reader MIDI Out ch 1", or that Accomp is Off.
+
+- **Wait:** the other hand plays at the tempo from your note up to the next note you have to
+  play, then waits there (its last note held). When you play, the other hand's notes on that beat
+  come in with yours and it goes on. If you play ahead of the tempo, the other hand's notes you
+  passed are left out rather than played all at once.
+- **Flow:** the clock carries both hands; when Flow holds for a note you are late on, the other
+  hand holds too.
+- **Rhythm:** the clock carries both hands and never holds.
+- **An intro** in the other hand (the left hand starts, you come in later): press **PLAY** in
+  Wait mode and the intro plays in time, then waits for your first note. Starting by just playing,
+  the intro is skipped.
+- *All* also plays the notes left out for being out of range (Range Lo / Hi, Fit Range). *Off*
+  sends nothing.
 
 ### Modes
 
@@ -202,10 +226,7 @@ shapes it), **Remind** and **Reminders** (after a mistake, the sound comes again
 MORE: **Range Lo / Hi** and **Out Range** (Play everything; Skip: notes outside are shown but not
 asked for; Hide: they are taken out of the score), **Mask** (hide notes once played, or hide the
 bar you are in so you must read ahead), **Note Names** (header shows the next notes, or next and
-played), **Accomp** (on by default: practising one hand, the other hand plays in time to the
-port "Sight Reader MIDI Out", so an instrument track listening to it plays along; in Wait mode it
-waits for you whenever your next note is due, and its notes that fall with yours sound when you
-play yours. All also sends the notes left out for being out of range), **Split**, **Transpose** (reloads the piece), **Tempo Ramp** (+2/5/10 % after each loop
+played), **Accomp** (also on PLAY; see Practising one hand), **Split**, **Transpose** (reloads the piece), **Tempo Ramp** (+2/5/10 % after each loop
 pass at or above **Goal**), **Loop Bars** and **Loop To**, **Auto Next** (On by default: two
 seconds after a piece ends, the next one in its folder or the Playlist loads; not while Loop is
 on). The bottom row is everything that goes out of "Sight

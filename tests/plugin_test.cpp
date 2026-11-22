@@ -37,6 +37,11 @@ static VstIntPtr host(AEffect*, VstInt32 op, VstInt32, VstIntPtr, void*, float)
     }
 }
 
+// 0.7.0: with the fake ALSA (tests/fake_alsa.c, argument 4) every MIDI Out message is written to a
+// trace with the audio time this sets before each block
+static void (*g_fakeTime)(double) = nullptr;
+static std::string g_tracePath;
+
 struct Plug
 {
     AEffect* e = nullptr;
@@ -58,6 +63,7 @@ struct Plug
         }
         evs->numEvents = (VstInt32)midi.size();
         d(effProcessEvents, 0, 0, evs);
+        if (g_fakeTime) g_fakeTime(g_time.samplePos / 44100.0);
         e->processReplacing(e, out, out, 128);
         g_time.samplePos += 128;
     }
@@ -195,10 +201,75 @@ static int digits(Plug& p, int base, int n)
     return any ? v : -1;
 }
 
+struct MidiLine { double t; std::string port, kind; int ch, note, vel; };
+// MIDI Out (or Linn Out) messages in the fake ALSA's trace, from line `from` on
+static std::vector<MidiLine> traceLines(size_t from, const char* port = "MIDI_Out")
+{
+    std::vector<MidiLine> out;
+    FILE* f = std::fopen(g_tracePath.c_str(), "r");
+    if (!f) return out;
+    char line[256]; size_t n = 0;
+    while (std::fgets(line, sizeof(line), f))
+    {
+        if (n++ < from) continue;
+        MidiLine m; char pt[64] = {0}, kind[16] = {0};
+        if (std::sscanf(line, "%lf %63s %15s %d %d %d", &m.t, pt, kind, &m.ch, &m.note, &m.vel) == 6 && std::strcmp(pt, port) == 0)
+        { m.port = pt; m.kind = kind; out.push_back(m); }
+    }
+    std::fclose(f);
+    return out;
+}
+static size_t traceCount()
+{
+    FILE* f = std::fopen(g_tracePath.c_str(), "r");
+    if (!f) return 0;
+    size_t n = 0; char line[256];
+    while (std::fgets(line, sizeof(line), f)) ++n;
+    std::fclose(f);
+    return n;
+}
+static double nowSec() { return g_time.samplePos / 44100.0; }
+// when `note` was switched on (kind "on") or off in `lines`, the first time; -1 if never
+static double whenOf(const std::vector<MidiLine>& lines, int note, const char* kind)
+{
+    for (const MidiLine& m : lines) if (m.note == note && m.kind == kind) return m.t;
+    return -1;
+}
+
+// The plugin's saved state, as the MPC keeps it in a project
+static std::vector<uint8_t> getChunk(Plug& p)
+{
+    void* ptr = nullptr;
+    VstIntPtr n = p.d(effGetChunk, 0, 0, &ptr);
+    return ptr && n > 0 ? std::vector<uint8_t>((uint8_t*)ptr, (uint8_t*)ptr + n) : std::vector<uint8_t>();
+}
+static void setChunk(Plug& p, std::vector<uint8_t> c) { p.d(effSetChunk, 0, (VstIntPtr)c.size(), c.data()); }
+// The same state as a version before 0.7.0 would have saved it: no "ver=" line in the extra state
+static std::vector<uint8_t> withoutVersion(std::vector<uint8_t> c)
+{
+    std::string s(c.begin(), c.end());
+    size_t extra = s.find("path="), v = s.find("ver=");
+    if (extra == std::string::npos || v == std::string::npos || extra < 4) return c;
+    size_t e = s.find('\n', v);
+    size_t cut = (e == std::string::npos ? s.size() : e + 1) - v;
+    c.erase(c.begin() + (long)v, c.begin() + (long)(v + cut));
+    uint32_t len = (uint32_t)(c.size() - extra);
+    for (int i = 0; i < 4; ++i) c[extra - 4 + (size_t)i] = (uint8_t)(len >> (8 * i));
+    return c;
+}
+
 int main(int argc, char** argv)
 {
     if (argc < 4) { std::printf("usage: plugin_test plugin.so home out.json\n"); return 2; }
     setenv("SIGHTREADER_HOME", argv[2], 1);
+    if (argc > 4)
+    {   // the fake ALSA, loaded before the plugin so the plugin's dlopen("libasound.so.2") finds it
+        g_tracePath = std::string(argv[3]) + ".midi.txt";
+        setenv("FAKE_ALSA_TRACE", g_tracePath.c_str(), 1);
+        void* fa = dlopen(argv[4], RTLD_NOW | RTLD_GLOBAL);
+        if (!fa) { std::printf("fake ALSA: %s\n", dlerror()); return 1; }
+        g_fakeTime = (void (*)(double))dlsym(fa, "fake_alsa_time");
+    }
     // A long one-hand piece for the scrolling test: 64 quarter notes, C major up and down.
     std::vector<int> longNotes;
     {
@@ -721,6 +792,151 @@ int main(int argc, char** argv)
         std::printf("after RESCAN: row0 '%s', select %d\n", p.text(gen::kTextBase + gen::T_ROW0).c_str(), plainOf(p, gen::P_SELECT));
         CHECK(p.text(gen::kTextBase + gen::T_ROW0).find("a aa") != std::string::npos);
         CHECK(plainOf(p, gen::P_SELECT) == 3);                                    // still b_second
+    }
+    // ---- 0.7.0: one hand practised; the other plays in rhythm to MIDI Out (with the fake ALSA) -------
+    if (g_fakeTime)
+    {
+        auto show = [&](const char* what, const std::vector<MidiLine>& o) {
+            std::printf("%s:", what);
+            for (const MidiLine& m : o) std::printf(" %s%d@%.2f", m.kind == "on" ? "+" : "-", m.note, m.t);
+            std::printf("\n");
+        };
+        auto play = [&](int note, double hold, double after) {
+            p.block({{0x90, (uint8_t)note, 100}}); p.run(hold); p.block({{0x80, (uint8_t)note, 0}}); p.run(after);
+        };
+        auto near = [](double t, double want) { return t >= 0 && std::fabs(t - want) < 0.06; };
+        // Duet, 120 BPM, two bars: right-hand halves (C5 E5 | G5 C6), left-hand quarters on every
+        // beat (C3 E3 G3 C4 | C3 E3 G3 C4), so a left-hand note falls with each of yours and one
+        // between
+        std::vector<SmfWriteTrack> tr(2);
+        tr[0].name = "Right"; tr[1].name = "Left";
+        const int rh[4] = {72, 76, 79, 84}, lh[4] = {48, 52, 55, 60};
+        for (int i = 0; i < 4; ++i) tr[0].notes.push_back({i * 192, i * 192 + 192, (uint8_t)rh[i], 90});
+        for (int i = 0; i < 8; ++i) tr[1].notes.push_back({i * 96, i * 96 + 96, (uint8_t)lh[i % 4], 70});
+        // Intro, 3/4: two left-hand quarters, then the right hand comes in over a held left-hand C
+        std::vector<SmfWriteTrack> ti(2);
+        ti[0].name = "Right"; ti[1].name = "Left";
+        ti[1].notes.push_back({0, 96, 43, 70}); ti[1].notes.push_back({96, 192, 47, 70}); ti[1].notes.push_back({192, 576, 48, 70});
+        ti[0].notes.push_back({192, 384, 72, 90}); ti[0].notes.push_back({384, 576, 74, 90});
+        std::string dir = std::string(argv[2]) + "/Library/Duet";
+        if (std::system(("mkdir -p '" + dir + "'").c_str()) != 0) std::printf("mkdir failed\n");
+        for (int k = 0; k < 2; ++k)
+        {
+            std::vector<uint8_t> bytes = k == 0 ? writeSmf(96, 120, 4, 4, 0, false, "Duet", tr) : writeSmf(96, 120, 3, 4, 0, false, "Intro", ti);
+            FILE* mf = std::fopen((dir + (k == 0 ? "/duet.mid" : "/intro.mid")).c_str(), "wb");
+            if (mf) { std::fwrite(bytes.data(), 1, bytes.size(), mf); std::fclose(mf); }
+        }
+        p.e->setParameter(p.e, gen::P_RESCAN, 1.0f); p.waitWorker(0.6);
+        auto load = [&](int row) {
+            CHECK(openFolder(p, "Duet"));
+            p.e->setParameter(p.e, gen::P_PICK0 + row, 1.0f); p.waitWorker(0.3);
+            p.e->setParameter(p.e, gen::P_LOAD, 1.0f); p.waitWorker(1.0);
+        };
+        load(0);
+        p.e->setParameter(p.e, gen::P_LOOP, 0.0f);
+        p.e->setParameter(p.e, gen::P_MODE, 0.0f);                              // Wait
+        p.e->setParameter(p.e, gen::P_HANDS, 0.5f); p.waitWorker(0.3);          // Right
+        setPlain(p, gen::P_TEMPO, 100);
+        std::printf("accomp '%s', message '%s'\n", p.text(gen::P_ACCOMP).c_str(), p.text(gen::kTextBase + gen::T_MESSAGE).c_str());
+        CHECK(p.text(gen::P_ACCOMP) == "Other Hand");
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("left hand on Sight Reader MIDI Out") != std::string::npos);
+        // Wait: the left hand runs at tempo from your note, holds just before your next one, and goes
+        // on when you play it
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.5);
+        size_t from = traceCount();
+        const double t1 = nowSec(); play(72, 0.2, 2.3);
+        const double t2 = nowSec(); play(76, 0.2, 1.0);
+        std::vector<MidiLine> out = traceLines(from);
+        std::printf("Wait, right hand: C5 at %.2f, E5 at %.2f;", t1, t2); show(" MIDI Out", out);
+        CHECK(near(whenOf(out, 48, "on"), t1));                                // C3 with your C5
+        CHECK(near(whenOf(out, 52, "on"), t1 + 0.5));                          // E3 a beat later, in time
+        CHECK(near(whenOf(out, 52, "off"), t2));                               // held while it waits for E5
+        CHECK(near(whenOf(out, 55, "on"), t2));                                // G3 with your E5
+        CHECK(near(whenOf(out, 60, "on"), t2 + 0.5));                          // C4 a beat later
+        CHECK(whenOf(out, 76, "on") < 0 && whenOf(out, 72, "on") < 0);         // never your own hand
+        // Flow: the clock carries it; when Flow holds for a note you missed, it holds too
+        p.e->setParameter(p.e, gen::P_MODE, 0.5f);
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.5);
+        from = traceCount();
+        const double tp = nowSec();
+        p.e->setParameter(p.e, gen::P_PLAY, 1.0f); p.run(2.06);                // a bar of count-in
+        play(72, 0.2, 4.0);                                                      // C5 on the downbeat; no E5
+        out = traceLines(from);
+        std::printf("Flow: downbeat %.2f;", tp + 2.0); show(" MIDI Out", out);
+        CHECK(near(whenOf(out, 48, "on"), tp + 2.0));                          // on the downbeat, with the clock
+        CHECK(near(whenOf(out, 52, "on"), tp + 2.5));
+        CHECK(near(whenOf(out, 55, "on"), tp + 3.0));                          // G3 on E5's beat: the clock is on time
+        CHECK(whenOf(out, 60, "on") > tp + 4.2 && whenOf(out, 60, "on") < tp + 5.0);   // C4 after the hold for E5
+        p.e->setParameter(p.e, gen::P_PLAY, 0.0f); p.run(0.2);
+        p.e->setParameter(p.e, gen::P_MODE, 0.0f);
+        // Hands = Left: the right hand plays, and the message says so
+        p.e->setParameter(p.e, gen::P_HANDS, 1.0f); p.waitWorker(0.3);
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("right hand on Sight Reader MIDI Out") != std::string::npos);
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.5);
+        from = traceCount();
+        const double t3 = nowSec(); play(48, 0.2, 1.0);                        // C3, the first left-hand note
+        out = traceLines(from);
+        std::printf("Wait, left hand: C3 at %.2f;", t3); show(" MIDI Out", out);
+        CHECK(near(whenOf(out, 72, "on"), t3));                                // the right hand's C5 with your C3
+        CHECK(whenOf(out, 76, "on") < 0);                                      // E5 waits for your E3 and G3
+        CHECK(whenOf(out, 48, "on") < 0);
+        // Accomp Off says what it means
+        p.e->setParameter(p.e, gen::P_ACCOMP, 0.0f); p.waitWorker(0.3);
+        CHECK(p.text(gen::kTextBase + gen::T_MESSAGE).find("Accomp is Off") != std::string::npos);
+        p.e->setParameter(p.e, gen::P_ACCOMP, 0.5f); p.waitWorker(0.2);
+        p.e->setParameter(p.e, gen::P_HANDS, 0.5f); p.waitWorker(0.2);
+        // A left-hand intro, started by just playing: the notes that are over are passed over (0.5.5
+        // sent them all at once); the one still sounding comes in with you
+        load(1);
+        std::printf("loaded '%s'\n", p.text(gen::kTextBase + gen::T_TITLE).c_str());
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.5);
+        from = traceCount();
+        const double t4 = nowSec(); play(72, 0.2, 1.0);
+        out = traceLines(from);
+        std::printf("Intro without PLAY: C5 at %.2f;", t4); show(" MIDI Out", out);
+        CHECK(whenOf(out, 43, "on") < 0 && whenOf(out, 47, "on") < 0);
+        CHECK(near(whenOf(out, 48, "on"), t4));
+        // ... and started with PLAY, the intro plays in time and waits for your first note
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.5);
+        from = traceCount();
+        const double t5 = nowSec(); p.e->setParameter(p.e, gen::P_PLAY, 1.0f); p.run(2.0);
+        const double t6 = nowSec(); play(72, 0.2, 1.0);
+        out = traceLines(from);
+        std::printf("Intro with PLAY at %.2f, C5 at %.2f;", t5, t6); show(" MIDI Out", out);
+        CHECK(near(whenOf(out, 43, "on"), t5) && near(whenOf(out, 47, "on"), t5 + 0.5));
+        CHECK(near(whenOf(out, 48, "on"), t6));
+        p.e->setParameter(p.e, gen::P_PLAY, 0.0f); p.run(0.2);
+        // LISTEN paused, then a note: practice takes over at the bar LISTEN was at, and the other hand
+        // comes in with you
+        load(0);
+        p.e->setParameter(p.e, gen::P_RESTART, 1.0f); p.run(0.3);
+        p.e->setParameter(p.e, gen::P_LISTEN, 1.0f); p.run(0.6);
+        p.e->setParameter(p.e, gen::P_LISTEN, 0.0f); p.waitWorker(0.3);       // pause in bar 1
+        p.e->setParameter(p.e, gen::P_BAR_FWD, 1.0f); p.waitWorker(0.3);      // >>: bar 2, still paused
+        const int pausedBar = digits(p, gen::kD_d_bar, 3);
+        from = traceCount();
+        const double t7 = nowSec(); play(79, 0.2, 1.0);                        // G5, bar 2's first right-hand note
+        out = traceLines(from);
+        std::printf("After LISTEN paused at bar %d: G5 at %.2f, LISTEN %s, bar %d;", pausedBar, t7,
+                    p.e->getParameter(p.e, gen::P_LISTEN) < 0.5f ? "off" : "on", digits(p, gen::kD_d_bar, 3));
+        show(" MIDI Out", out);
+        CHECK(pausedBar == 2);
+        CHECK(p.e->getParameter(p.e, gen::P_LISTEN) < 0.5f);
+        CHECK(digits(p, gen::kD_d_bar, 3) == 2);                               // practice went on at bar 2
+        CHECK(near(whenOf(out, 48, "on"), t7));                                // bar 2's C3 with your G5
+        CHECK(near(whenOf(out, 52, "on"), t7 + 0.5));                          // then E3 in time
+        // A project saved before 0.7.0 with Accomp Off gets Other Hand; a newer one keeps Off
+        p.e->setParameter(p.e, gen::P_ACCOMP, 0.0f); p.run(0.05);
+        std::vector<uint8_t> chunk = getChunk(p);
+        setChunk(p, chunk); p.run(0.05);
+        CHECK(p.text(gen::P_ACCOMP) == "Off");
+        std::vector<uint8_t> old = withoutVersion(chunk);
+        CHECK(old.size() < chunk.size());
+        setChunk(p, old); p.run(0.05);
+        std::printf("a pre-0.7.0 project with Accomp Off loads as '%s'\n", p.text(gen::P_ACCOMP).c_str());
+        CHECK(p.text(gen::P_ACCOMP) == "Other Hand");
+        p.waitWorker(1.0);
+        p.e->setParameter(p.e, gen::P_HANDS, 0.0f); p.waitWorker(0.2);
     }
     std::printf("automate %d updateDisplay %d\n", g_automate, g_updates);
     p.d(effMainsChanged, 0, 0); p.d(effClose);

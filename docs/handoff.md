@@ -5,6 +5,28 @@ Read the README, then this; [design.md](design.md) has the reasoning and sources
 
 ## Start here (next session)
 
+**0.7.0 (2026-11-22): the other hand.** The user: practising one hand, the other should play in
+rhythm through MIDI Out, waiting for them (Wait), or holding with Flow. The 0.5.5 engine logic was
+right. What stopped it on the MPC:
+- Accomp = Off saved in older projects: they now get Other Hand once (`ver=` in the extra state);
+- Accomp out of sight: it is now on PLAY next to Hands, and messages say what happens;
+- a paused LISTEN swallowing notes: a note or PLAY now takes over from LISTEN's bar.
+
+Also fixed:
+- the intro burst (catch-up passes over notes you were ahead of);
+- the waiting step's note sounding early after a locate.
+
+`tests/fake_alsa.c` lets plugin_test check MIDI Out to the block (run_tests.sh builds it on
+Linux). Ask the user to try on the MPC:
+1. Hands = Right in Wait on a two-hand piece. With the instrument track on Sight Reader MIDI Out,
+   is the left hand heard in time, waiting at each note?
+2. Flow.
+3. PLAY in Wait on a piece with a left-hand intro.
+4. Pause LISTEN, press >>, then play.
+
+If it is still silent, ask what the message line says when Hands is changed, and whether LISTEN
+is heard on the same track.
+
 **0.6.5 (2026-11-21)**, from the user's notes on 0.6.0:
 - **The jog wheel** "jumped all over the place". Every number now has `replacementStrings` (its
   list of values), so the MPC steps one value per click itself. `hostStep` only corrects a click

@@ -186,4 +186,5 @@ SHORT = {
     "hands": ["Both staves asked for", "Treble only; bass dimmed", "Bass only; treble dimmed"],
     "view": ["Half the screen turns at a time", "The whole screen turns", "Your bar always first",
              "Music moves under the cursor"],
+    "accomp": ["Nothing to MIDI Out", "The other hand, in time", "All you skip, in time"],
 }

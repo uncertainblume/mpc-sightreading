@@ -90,7 +90,7 @@ public:
         step_ = s;
         pos_ = score_->steps[(size_t)s].time - 1;
         accompStep_ = s;
-        accPos_ = score_->steps[(size_t)s].time;
+        accPos_ = score_->steps[(size_t)s].time - 1.0;   // just short of it: its notes come with yours (0.7.0)
         lastDoneStep_ = -1;
         holdLeft_ = 0;
         if (state_ == RunState::Done) state_ = RunState::Idle;
@@ -353,7 +353,9 @@ private:
         else { step_ = 0; pos_ = 0; }
         holdLeft_ = 0; countInElapsed_ = 0; countInNext_ = 0;
         accompStep_ = step_;
-        accPos_ = step_ < (int)(score_ ? score_->steps.size() : 0) ? score_->steps[(size_t)step_].time : 0;
+        // just short of the first step: what comes before it (an intro) plays from PLAY, and what
+        // falls with your first note comes with it (0.7.0)
+        accPos_ = step_ < (int)(score_ ? score_->steps.size() : 0) ? score_->steps[(size_t)step_].time - 1.0 : 0;
         lastDoneStep_ = -1; lastDoneAt_ = -1e9;
         winStart_[0] = winStart_[1] = -1;
         if (clearStats) { hits_ = misses_ = wrongs_ = streak_ = 0; timedHits_ = 0; timingSumMs_ = 0; activeSeconds_ = 0; remindCountdown_ = 0; remindersLeft_ = 0; }
@@ -410,10 +412,25 @@ private:
         const int stop = tail ? n : step_;
         while (accompStep_ < stop && score_->steps[(size_t)accompStep_].time <= accPos_) emitAccomp(accompStep_++);
     }
-    void emitAccompUpTo(double t)
+    // Wait mode, a step just played (0.7.0): the accompaniment the clock had not reached yet. Notes
+    // within a sixteenth before the step, or still sounding at it, sound now with yours. Older
+    // ones, which you were ahead of (or a left-hand intro when you start without PLAY), are passed
+    // over: 0.5.5 sent them all at once.
+    void catchUpAccomp(double done)
     {
         const int n = (int)score_->steps.size();
-        while (accompStep_ < n && score_->steps[(size_t)accompStep_].time <= t) emitAccomp(accompStep_++);
+        const double keep = done - kWholeUnits / 16.0;
+        while (accompStep_ < n && score_->steps[(size_t)accompStep_].time <= done)
+        {
+            const Step& stp = score_->steps[(size_t)accompStep_];
+            for (uint32_t k = 0; k < stp.count; ++k)
+            {
+                uint32_t ni = score_->stepNotes[stp.firstNote + k];
+                const PlayNote& pn = score_->notes[ni];
+                if (!required(pn) && (stp.time >= keep || pn.end > done)) push(EvType::AccompOn, pn.pitch, (int32_t)ni);
+            }
+            ++accompStep_;
+        }
     }
     void emitAccomp(int s)
     {
@@ -625,7 +642,7 @@ private:
             // the accompaniment catches up to the step just played (its other-hand notes sound
             // with it), then runs in time towards the next step that wants you, and waits there
             const double done = score_->steps[(size_t)(step_ - 1)].time;
-            emitAccompUpTo(done);
+            catchUpAccomp(done);
             accPos_ = done;
             if (step_ < n) pos_ = score_->steps[(size_t)step_].time;
             skipUnrequired(false);

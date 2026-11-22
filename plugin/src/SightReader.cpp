@@ -54,7 +54,7 @@ using namespace sr;
 
 namespace {
 
-constexpr int kVersion = 605;   // 0.6.5
+constexpr int kVersion = 700;   // 0.7.0
 
 // Set while this plugin writes one of its own parameters, so parameterChanged() ignores it.
 // Per thread: the audio thread and the worker both write parameters.
@@ -338,6 +338,7 @@ public:
             case gen::P_SELECT: listSrc_.store(2); listGen_.fetch_add(1); listDirty_.store(true); wake(); break;
             case gen::P_LOOP_FROM: case gen::P_LOOP_TO: case gen::P_LOOP_BARS: if (!loadingState_.load()) loopRule(index); break;
             case gen::P_LOOP_SET_FROM: if (plain >= 0.5f) trig_setfrom_.store(true); break;
+            case gen::P_HANDS: case gen::P_ACCOMP: if (!loadingState_.load()) { accompHint_.store(true); wake(); } break;
             case gen::P_BAR_BACK: if (plain >= 0.5f) barStep_.store(-1); break;
             case gen::P_BAR_FWD: if (plain >= 0.5f) barStep_.store(1); break;
             case gen::P_LOOP_SET_TO: if (plain >= 0.5f) trig_setto_.store(true); break;
@@ -492,7 +493,8 @@ public:
     void saveExtraState(std::vector<uint8_t>& out) override
     {
         std::lock_guard<std::mutex> lk(textMx_);
-        std::string s = "path=" + currentPath_ + "\n" + "bpm=" + (bpmAuthority_.load() ? "1" : "0") + "\n";
+        std::string s = "path=" + currentPath_ + "\n" + "bpm=" + (bpmAuthority_.load() ? "1" : "0") + "\n" +
+                        "ver=" + std::to_string(kVersion) + "\n";
         out.assign(s.begin(), s.end());
     }
     void loadExtraState(const uint8_t* data, size_t size) override
@@ -500,6 +502,11 @@ public:
         std::string s((const char*)data, size);
         size_t b = s.find("bpm=");
         if (b != std::string::npos && b + 4 < s.size()) bpmAuthority_.store(s[b + 4] == '1');
+        // Accomp was Off by default until 0.5.5, and a project keeps what it saved, so practising one
+        // hand stayed silent. A project saved before 0.7.0 gets Other Hand once (0.7.0).
+        size_t v = s.find("ver=");
+        const int savedBy = v == std::string::npos ? 0 : std::atoi(s.c_str() + v + 4);
+        if (savedBy < 700 && (int)std::lround(get(gen::P_ACCOMP)) == 0) setParamFromEngine(gen::P_ACCOMP, 1.0f);
         size_t p = s.find("path=");
         if (p == std::string::npos) return;
         size_t e = s.find('\n', p);
@@ -626,7 +633,7 @@ public:
             if (!ctx.transport.playing && lastTransportPlaying_) { wantPlay = false; setParamFromEngine(gen::P_PLAY, 0.0f); }
         }
         lastTransportPlaying_ = ctx.transport.valid && ctx.transport.playing;
-        if (wantPlay && listening_) { stopListen(); setParamFromEngine(gen::P_LISTEN, 0.0f); }   // PLAY takes over
+        if (wantPlay && listening_) takeOverFromListen();                                       // PLAY takes over
         if (wantPlay != lastPlayParam_)
         {
             engine_.setPlaying(wantPlay, settings_);
@@ -648,7 +655,9 @@ public:
             else if (e.isNoteOff()) released_[e.note() & 127] = true;
             else if (e.isAllNotesOff()) accompAllOff();
         }
-        // 4. engine (what you play while LISTEN plays is not graded)
+        // 4. engine (what you play while LISTEN plays is not graded). A note while LISTEN is paused
+        // (0.7.0): practice takes over from the bar LISTEN was at, and the note counts
+        if (listening_ && listenPaused_ && nn > 0 && current_) takeOverFromListen();
         engine_.process(settings_, notes, listening_ ? 0 : nn, n, sr_);
         syncHeaderFields();
         double bpmNow = engine_.effectiveBpm(settings_);
@@ -1056,6 +1065,16 @@ private:
         mi = std::max(0, std::min((int)sc.measures.size() - 1, mi));
         setTracked(param, (float)sc.measures[(size_t)mi].number);
         loopRule(param);
+    }
+    // PLAY, or a note played while LISTEN is paused (0.7.0): LISTEN stops, and practice goes on from
+    // the start of the bar you were hearing (it used to go back to where practice had been).
+    void takeOverFromListen()
+    {
+        const Score& sc = current_->score;
+        const int32_t at = sc.measures.empty() ? 0 : sc.measures[(size_t)sc.measureAt((int32_t)listen_.position())].start;
+        stopListen();
+        setParamFromEngine(gen::P_LISTEN, 0.0f);
+        if (!sc.steps.empty()) locateTo(engine_.stepAtOrAfter(at));
     }
     void stopListen()
     {
@@ -1773,6 +1792,19 @@ private:
                 if (gen) rebuildGenerated();
                 else if (!p.empty()) loadPath(p, false);
             }
+            if (accompHint_.exchange(false))
+            {   // 0.7.0: what the hand you are not playing does
+                const int hands = (int)get(gen::P_HANDS), acc = (int)get(gen::P_ACCOMP);
+                const char* mine = hands == 1 ? "Right" : "Left";
+                const char* other = hands == 1 ? "left" : "right";
+                const std::string ch = std::to_string((int)get(gen::P_OUT_CH));
+                if (hands == 0)
+                    setText(gen::T_MESSAGE, acc ? "Accomp plays the other hand once Hands is Right or Left" : "Both hands: nothing goes to MIDI Out");
+                else if (acc == 0)
+                    setText(gen::T_MESSAGE, std::string(mine) + " hand only; Accomp is Off, so the " + other + " hand is silent");
+                else
+                    setText(gen::T_MESSAGE, std::string(mine) + " hand; " + other + " hand on Sight Reader MIDI Out ch " + ch);
+            }
             if (int hc = hintCode_.exchange(0))
             {
                 int kind = hc & 255, expected = (hc >> 8) & 255, played = (hc >> 16) & 255;
@@ -2419,6 +2451,7 @@ private:
     // 0.5.0
     std::atomic<int> listSrc_{0}, listGen_{0}, pick_{-1}, qpick_{-1}, locateReq_{0}, rowSel_{-1};
     std::atomic<int> barStep_{0};                  // the transport bar's arrows: -1 or +1 (0.6.5)
+    std::atomic<bool> accompHint_{false};          // Hands or Accomp changed: say what the other hand does (0.7.0)
     std::atomic<bool> loadingState_{false};
     // 0.5.5
     std::atomic<bool> trig_setfrom_{false}, trig_setto_{false}, linnAsk_{false}, linnAskNow_{false}, lightsRepaint_{false};
